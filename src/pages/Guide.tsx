@@ -8,7 +8,7 @@ export default function Guide() {
           <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
-            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#read">Reading results</a>
+            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#markets">Markets</a><a href="#read">Reading results</a>
             <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
@@ -30,6 +30,19 @@ export default function Guide() {
           <li><b>Run the final check</b> when you're happy. The strategy is tested once on recent prices it has never seen. This is the result that counts, and it's recorded in <Link to="/history?tab=checks">History</Link>.</li>
           <li><b>Save the result</b> to compare later or share with your partner.</li>
         </ol>
+
+        <h2 id="markets">Markets: ranking and comparing coins</h2>
+        <p>The <Link to="/markets">Markets</Link> page lists every actively traded coin on Binance (USDT pairs) and ranks them.</p>
+        <ul>
+          <li><b>Pick a period</b> (24h, 7 days, 30 days, 90 days, 1 year) to rank by how much each coin moved.</li>
+          <li><b>Rank by</b> return, return ÷ risk (reward per unit of bumpiness), 24h volume, or volatility. Flip the order to see the worst performers.</li>
+          <li><b>Trend</b> shows Up when the price is above its 50-day average and the 50-day is above the 200-day, Down for the opposite, Mixed otherwise.</li>
+          <li><b>Filter</b> by minimum daily volume to hide tiny, illiquid coins (the default hides coins trading under $1M a day), or show only uptrends or downtrends.</li>
+          <li><b>Tap coins</b> (up to 8) to compare them on one chart. Every line starts at 0% so a $0.001 coin and a $60,000 coin compare fairly.</li>
+          <li><b>Backtest →</b> on any row opens that coin on the Test page.</li>
+        </ul>
+        <p>Stablecoins and leveraged tokens are left out. Coins listed recently show "new" for periods longer than their history.
+          A coin topping the list recently says nothing reliable about the next month. Use the Test page to check whether a rule would have worked.</p>
 
         <h2 id="read">Reading results</h2>
         <ul>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import EquityChart from '../components/EquityChart'
 import { Headline, MetricTable, verdict } from '../components/Metrics'
 import { Disclosure, Info } from '../components/Info'
@@ -32,8 +32,10 @@ interface Loaded { bars: Bar[]; symbol: string; label: string; interval: string;
 
 export default function Backtest() {
   const { session } = useAuth()
-  const [coin, setCoin] = useState('BTCUSDT')
-  const [otherCoin, setOtherCoin] = useState('')
+  const [urlParams] = useSearchParams()
+  const urlCoin = (urlParams.get('coin') || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const [coin, setCoin] = useState(urlCoin ? (COINS.some(c => c.sym === urlCoin) ? urlCoin : 'OTHER') : 'BTCUSDT')
+  const [otherCoin, setOtherCoin] = useState(urlCoin && !COINS.some(c => c.sym === urlCoin) ? urlCoin : '')
   const [strategyId, setStrategyId] = useState('sma_cross')
   const [cash, setCash] = useState(200)
   const [feePct, setFeePct] = useState(0.1)
@@ -60,7 +62,7 @@ export default function Backtest() {
   const costs: Costs = { fee: feePct / 100, slippage: slipPct / 100 }
   const combos = Object.values(strategy.grid).reduce((n, v) => n * v.length, 1)
   const symbol = coin === 'OTHER' ? otherCoin : coin
-  const coinLabel = COINS.find(c => c.sym === symbol)?.name ?? symbol
+  const coinLabel = COINS.find(c => c.sym === symbol)?.name ?? symbol.replace(/USDT$/, '')
 
   useEffect(() => { if (train) resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [train])
   useEffect(() => { if (test) testRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [test])
