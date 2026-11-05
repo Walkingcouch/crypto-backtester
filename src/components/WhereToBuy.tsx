@@ -12,7 +12,7 @@ export default function WhereToBuy({ base, where, known, partial, compact = fals
   const unsure = !has && !!partial?.has(broker.id)          // exchange doesn't publish a full list
   const onMine = broker.id === 'other' ? null : has ? true : unsure ? null : known.has(broker.id) || broker.id === 'binance' ? false : null
   const others = BROKERS.filter(b => b.id !== 'other')
-  const label = has ? `✓ ${broker.name}` : unsure ? `Check ${broker.name}` : onMine === false ? `Not on ${broker.name}` : `${where.length} exchanges`
+  const label = has ? `✓ ${broker.name}` : unsure ? `Check trader` : onMine === false ? `Not on ${broker.name}` : `${where.length} exchanges`
   return (
     <span className={`wtb ${compact ? 'compact' : ''}`}
       onPointerEnter={e => { if (e.pointerType === 'mouse') setOpen(true) }}
