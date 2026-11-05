@@ -26,6 +26,8 @@ export default function Markets() {
   const [minVol, setMinVol] = useState(1e6)
   const [trendFilter, setTrendFilter] = useState<'all' | 'up' | 'down'>('all')
   const [q, setQ] = useState('')
+  const [minP, setMinP] = useState('')
+  const [maxP, setMaxP] = useState('')
   const [showN, setShowN] = useState(100)
   const selected = useMemo(() => (params.get('compare') || '').split(',').filter(Boolean), [params])
   const [lines, setLines] = useState<CompareLine[] | null>(null)
@@ -66,10 +68,11 @@ export default function Markets() {
     return all
       .filter(c => c.quoteVolume >= minVol || selected.includes(c.base))
       .filter(c => !term || c.base.includes(term))
+      .filter(c => (minP === '' || c.price >= +minP) && (maxP === '' || c.price <= +maxP))
       .filter(c => trendFilter === 'all' || c.trend === trendFilter)
       .map(c => ({ c, v: val(c) }))
       .sort((a, b) => (a.v == null ? 1 : b.v == null ? -1 : asc ? a.v - b.v : b.v - a.v))
-  }, [all, period, sortBy, asc, minVol, q, trendFilter, selected])
+  }, [all, period, sortBy, asc, minVol, q, trendFilter, selected, minP, maxP])
 
   const colorOf = (base: string) => PALETTE[selected.indexOf(base) % PALETTE.length]
 
@@ -159,6 +162,22 @@ export default function Markets() {
           <label className="mini"><span>Trend</span>
             <select value={trendFilter} onChange={e => setTrendFilter(e.target.value as 'all' | 'up' | 'down')}>
               <option value="all">Any</option><option value="up">Uptrend only</option><option value="down">Downtrend only</option></select></label>
+        </div>
+
+        <div className="price-range">
+          <div className="mini"><span>Price range (USD)</span>
+            <div className="pr-inputs">
+              <label className="pr-box"><span>$</span><input type="number" inputMode="decimal" min={0} placeholder="Lowest" value={minP} onChange={e => setMinP(e.target.value)} /></label>
+              <span className="muted">to</span>
+              <label className="pr-box"><span>$</span><input type="number" inputMode="decimal" min={0} placeholder="Highest" value={maxP} onChange={e => setMaxP(e.target.value)} /></label>
+            </div>
+          </div>
+          <div className="chips pr-chips">
+            {[['Any', '', ''], ['Under $1', '', '1'], ['$1–$10', '1', '10'], ['$10–$100', '10', '100'], ['$100+', '100', '']].map(([label, lo, hi]) => (
+              <button key={label} className={`chip chip-sm ${minP === lo && maxP === hi ? 'on' : ''}`} onClick={() => { setMinP(lo); setMaxP(hi) }}><b>{label}</b></button>
+            ))}
+          </div>
+          {minP !== '' && maxP !== '' && +minP > +maxP && <span className="hint neg">Lowest is above highest — no coins can match.</span>}
         </div>
 
         {progress && !historyReady && needsHistory && (

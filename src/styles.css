@@ -311,3 +311,12 @@ tr.hl td { background: var(--accent-soft); }
 .cb-dots { display: flex; gap: 4px; }
 .cb-dots i { width: 10px; height: 10px; border-radius: 50%; }
 @media (max-width: 420px) { .nav a { padding: 6px 7px; font-size: 14px; } .topbar-inner .btn-sm { padding: 6px 9px; } }
+
+.price-range { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; margin-bottom: 14px; }
+.pr-inputs { display: flex; align-items: center; gap: 8px; }
+.pr-box { display: flex; align-items: center; gap: 4px; border: 1px solid var(--border); border-radius: 9px; padding: 0 10px; background: var(--surface); }
+.pr-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pr-box span { color: var(--muted); font-size: 14px; }
+.pr-box input { border: 0; box-shadow: none !important; padding: 7px 0; width: 96px; font-size: 14px; background: transparent; }
+.pr-chips .chip { min-width: 0; }
+@media (max-width: 560px) { .pr-inputs { width: 100%; } .pr-box { flex: 1; } .pr-box input { width: 100%; } .pr-chips .chip-sm { flex: 1 1 auto; } }
