@@ -1,8 +1,7 @@
-import { NavLink, Route, Routes, Link } from 'react-router-dom'
+import { NavLink, Route, Routes, Link, Navigate } from 'react-router-dom'
 import Backtest from './pages/Backtest'
 import Guide from './pages/Guide'
-import Ledger from './pages/Ledger'
-import Runs from './pages/Runs'
+import History from './pages/History'
 import Account from './pages/Account'
 import { useAuth } from './lib/auth'
 import { cloudEnabled } from './lib/supabase'
@@ -17,13 +16,12 @@ export default function App() {
             <span className="brand-mark">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8" /></svg>
             </span>
-            Backtester
+            <span className="brand-name">Backtester</span>
           </Link>
           <nav className="nav">
-            <NavLink to="/" end>Backtest</NavLink>
+            <NavLink to="/" end>Test</NavLink>
+            <NavLink to="/history">History</NavLink>
             <NavLink to="/guide">Guide</NavLink>
-            <NavLink to="/runs">Saved runs</NavLink>
-            <NavLink to="/ledger">Test ledger</NavLink>
           </nav>
           {cloudEnabled && (
             <Link to="/account" className="btn btn-ghost btn-sm">{session ? name || 'Account' : 'Sign in'}</Link>
@@ -33,8 +31,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Backtest />} />
         <Route path="/guide" element={<Guide />} />
-        <Route path="/runs" element={<Runs />} />
-        <Route path="/ledger" element={<Ledger />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/runs" element={<Navigate to="/history" replace />} />
+        <Route path="/ledger" element={<Navigate to="/history?tab=checks" replace />} />
         <Route path="/account" element={<Account />} />
         <Route path="*" element={<div className="page empty">Page not found. <Link to="/">Back to backtest</Link></div>} />
       </Routes>

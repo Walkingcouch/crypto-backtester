@@ -48,7 +48,7 @@ export default function EquityChart({ lines }: { lines: Line[] }) {
     <div>
       <div className="legend">
         {lines.map(l => <span key={l.name}><i style={{ background: l.color }} />{l.name}</span>)}
-        <span className="spacer" /><span>log scale · lower panel: drawdown %</span>
+        <span className="spacer" /><span>value over time · below: % down from peak</span>
       </div>
       <div ref={top} className="chart" />
       <div ref={bot} className="chart-dd" />

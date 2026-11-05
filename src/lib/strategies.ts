@@ -3,6 +3,8 @@ import type { Bar, StrategyFn } from './engine'
 export interface StrategyDef {
   id: string
   name: string
+  friendly?: string
+  tagline?: string
   version: number // bump whenever the rules change -> the test ledger treats it as a new strategy
   summary: string
   rules: { entry: string; exit: string; sizing: string }
@@ -58,7 +60,7 @@ const volTarget: StrategyFn = (bars: Bar[], p) => {
 
 export const STRATEGIES: StrategyDef[] = [
   {
-    id: 'sma_cross', name: 'Trend baseline (SMA cross)', version: 1,
+    id: 'sma_cross', name: 'Trend baseline (SMA cross)', friendly: 'Follow the trend', tagline: 'Hold while prices trend up, sit in cash while they trend down. The baseline to beat.', version: 1,
     summary: 'The baseline every other idea must beat. Holds when the short-term average price is above the long-term average.',
     rules: {
       entry: 'Fast moving average of closes rises above the slow moving average.',
@@ -68,7 +70,7 @@ export const STRATEGIES: StrategyDef[] = [
     grid: { fast: [10, 20, 50], slow: [100, 150, 200] }, fn: smaCross,
   },
   {
-    id: 'donchian', name: 'Breakout (Donchian)', version: 1,
+    id: 'donchian', name: 'Breakout (Donchian)', friendly: 'Catch breakouts', tagline: 'Buy when price breaks to a new high, sell when it breaks to a new low.', version: 1,
     summary: 'Buys when price breaks out to a new multi-week high, exits on a new multi-week low.',
     rules: {
       entry: 'Close above the highest high of the previous `entry` bars.',
@@ -78,7 +80,7 @@ export const STRATEGIES: StrategyDef[] = [
     grid: { entry: [20, 55], exit: [10, 20] }, fn: donchian,
   },
   {
-    id: 'sma_cross_voltarget', name: 'Trend + volatility sizing', version: 1,
+    id: 'sma_cross_voltarget', name: 'Trend + volatility sizing', friendly: 'Trend, steadier ride', tagline: 'Follow the trend, but hold less when the market gets wild.', version: 1,
     summary: 'Same signal as the baseline, but holds less when the market is wild and more when it is calm.',
     rules: {
       entry: 'Fast average above slow average.',
@@ -88,7 +90,7 @@ export const STRATEGIES: StrategyDef[] = [
     grid: { fast: [20, 50], slow: [100, 200], targetVol: [0.4, 0.6] }, fn: volTarget,
   },
   {
-    id: 'buy_and_hold', name: 'Buy & hold', version: 1,
+    id: 'buy_and_hold', name: 'Buy & hold', friendly: 'Buy and hold', tagline: 'Buy once and never sell.', version: 1,
     summary: 'Benchmark: buy on day one and never sell.',
     rules: { entry: 'First bar.', exit: 'Never.', sizing: '100%.' },
     grid: {}, fn: bars => bars.map(() => 1),

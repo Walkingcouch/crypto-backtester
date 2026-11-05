@@ -5,11 +5,11 @@ export default function Guide() {
     <main className="page">
       <div className="doc">
         <div className="page-head">
-          <h1>Guide</h1>
+          <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
             <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#read">Reading results</a>
-            <a href="#rules">The rules</a><a href="#unseen">Unseen test</a><a href="#accounts">Accounts</a>
+            <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
         </div>
@@ -22,20 +22,20 @@ export default function Guide() {
 
         <h2 id="quick">Quick start</h2>
         <ol className="steps">
-          <li><b>Open <Link to="/">Backtest</Link>.</b> Leave the market as <code>BTCUSDT</code>, candles on 1 day, history from 2018.</li>
-          <li><b>Choose a strategy.</b> Start with <i>Trend baseline (SMA cross)</i>. Its exact entry, exit and sizing rules are shown under the picker.</li>
-          <li><b>Set your costs.</b> Start cash (e.g. $200), your exchange's real fee per trade, and slippage (how much worse than the quoted price you fill — 0.05% is reasonable for big coins).</li>
-          <li><b>Press Run backtest.</b> Prices download, the oldest ~70% become the <i>training period</i>, and every combination of the strategy's settings is tried on it. The best one is shown against buy &amp; hold.</li>
-          <li><b>Look at the settings table.</b> Do the neighbours of the winner also do well? If only one exact setting works, it's probably luck.</li>
-          <li><b>When you're done tweaking, reveal the unseen test.</b> The winning settings run on the most recent ~30% of prices they have never seen. That result is the one that counts, and it's recorded in the <Link to="/ledger">test ledger</Link>.</li>
-          <li><b>Save the run</b> if you want to come back to it or show your partner.</li>
+          <li><b>Open the <Link to="/">Test</Link> page.</b> Tap a coin (Bitcoin is a good start).</li>
+          <li><b>Pick a strategy.</b> Start with <i>Follow the trend</i> — it's the baseline every other idea has to beat. Tap "Exact rules" to see precisely when it buys and sells.</li>
+          <li><b>Choose a starting amount and your fee.</b> "Exchange order" (~0.1%) if you place orders on an exchange, "App instant buy" (~1%) if you use a buy button in an app. Fees matter a lot.</li>
+          <li><b>Press the big Test button.</b> You'll see what your money would have become on older prices, next to simply buying and holding, plus a plain-English verdict.</li>
+          <li><b>Try a few strategies</b> on the older prices if you like. That's free.</li>
+          <li><b>Run the final check</b> when you're happy. The strategy is tested once on recent prices it has never seen. This is the result that counts, and it's recorded in <Link to="/history?tab=checks">History</Link>.</li>
+          <li><b>Save the result</b> to compare later or share with your partner.</li>
         </ol>
 
         <h2 id="read">Reading results</h2>
         <ul>
           <li><b>Total return</b> — how much $1 became. Easy to understand, easy to be fooled by.</li>
-          <li><b>Sharpe</b> — return per unit of volatility, per year. Above 1 is good for a simple strategy; buy &amp; hold crypto is often around 0.5–1.2. This is the main score.</li>
-          <li><b>Max drawdown</b> — the worst peak-to-bottom fall. Ask: could I actually sit through this without panicking?</li>
+          <li><b>Risk-adjusted score (Sharpe)</b> — return per unit of bumpiness, per year. Above 1 is good for a simple strategy; buy &amp; hold crypto is often around 0.5–1.2. This is the main score.</li>
+          <li><b>Worst drop (max drawdown)</b> — the worst peak-to-bottom fall. Ask: could I actually sit through this without panicking?</li>
           <li><b>Calmar</b> — yearly return divided by max drawdown.</li>
           <li><b>Trades / fees</b> — more trades means more fees. A strategy that only wins before fees doesn't win.</li>
           <li><b>Win rate</b> — share of complete buy→sell cycles that made money. Trend strategies often win under 40% of trades but make it back on a few big runs.</li>
@@ -54,12 +54,12 @@ export default function Guide() {
           <li><b>Always a benchmark.</b> Every result is shown next to simply buying and holding.</li>
         </ul>
 
-        <h2 id="unseen">The unseen test (why it's locked)</h2>
+        <h2 id="unseen">The final check (why it's locked)</h2>
         <p>If you tweak a strategy after seeing its test result and then test again, the test period has quietly become
           part of your development. Do that ten times and you'll eventually find something that "works" on it by chance.</p>
-        <p>So the test period stays locked until you click <b>Reveal</b>. Every reveal is written to the ledger with the strategy,
+        <p>So the recent prices stay locked until you press <b>Run final check</b>. Every final check is written to History with the strategy,
           its settings, fee and period. If the same strategy is revealed again on the same period with different settings,
-          you get a warning that the result should be treated as in-sample. The ledger is append-only — reveals can't be edited or deleted.</p>
+          you get a warning that it's no longer a fair test. The record is permanent — checks can't be edited or deleted.</p>
         <p>Once a period is spent, get fresh data: wait a few months for new prices, test a different coin, or paper-trade forward.</p>
 
         <h2 id="accounts">Accounts and sharing</h2>
@@ -67,7 +67,7 @@ export default function Guide() {
         <p><Link to="/account">Sign in</Link> with your email (no password — you get a sign-in link) to:</p>
         <ul>
           <li>Keep saved runs across devices.</li>
-          <li>Share one test ledger with your partner, so neither of you can quietly re-test until something looks good.</li>
+          <li>Share one record of final checks with your partner, so neither of you can quietly re-test until something looks good.</li>
           <li>See each other's saved runs (everyone signed in can read them; only the author can delete).</li>
         </ul>
 
