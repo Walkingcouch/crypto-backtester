@@ -74,3 +74,30 @@ export function useBrokerPrices(broker: Broker) {
   }, [broker.id])
   return { quotes, at, error }
 }
+
+// ---------- which exchanges list which coins (from /api/listings) ----------
+export interface Listings { byCoin: Map<string, string[]>; ok: Set<string>; partial: Set<string>; updated: string }
+let listingsPromise: Promise<Listings> | null = null
+function loadListings(): Promise<Listings> {
+  if (!listingsPromise) {
+    listingsPromise = fetch('/api/listings').then(r => { if (!r.ok) throw new Error(String(r.status)); return r.json() }).then(j => {
+      const byCoin = new Map<string, string[]>(), ok = new Set<string>(), partial = new Set<string>()
+      for (const [id, v] of Object.entries(j.exchanges as Record<string, { ok: boolean; coins: string[]; partial?: boolean }>)) {
+        if (!v.ok) continue
+        if (v.partial) partial.add(id); else ok.add(id)
+        for (const c of v.coins) { const a = byCoin.get(c) ?? []; a.push(id); byCoin.set(c, a) }
+      }
+      return { byCoin, ok, partial, updated: j.updated }
+    })
+    listingsPromise.catch(() => { listingsPromise = null })
+  }
+  return listingsPromise
+}
+export function useListings() {
+  const [data, setData] = useState<Listings | null>(null)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { loadListings().then(setData).catch(() => setFailed(true)) }, [])
+  /** Exchanges (by id) that list a coin. Binance always, since every coin here comes from Binance. */
+  const where = (base: string): string[] => ['binance', ...(data?.byCoin.get(base) ?? [])]
+  return { listings: data, failed, where }
+}

@@ -58,7 +58,8 @@ export default async function handler(req, res) {
     try {
       const set = await fn()
       const coins = [...set].filter(c => c && !FIAT.has(c)).sort()
-      return [id, { ok: coins.length > 0, coins }]
+      // CoinSpot's public feed only covers its older coins, so a missing coin may still be listed
+      return [id, { ok: coins.length > 0, coins, partial: id === 'coinspot' }]
     } catch (e) {
       return [id, { ok: false, coins: [], error: String(e && e.message || e) }]
     }

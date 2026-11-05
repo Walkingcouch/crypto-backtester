@@ -30,8 +30,8 @@ export default function App() {
           <label className="cur-select" title="Show prices in">
             <span className="sr-only">Currency</span>
             <select value={cur} onChange={e => setCur(e.target.value as Cur)} aria-label="Currency">
-              <option value="AUD">🇦🇺 AUD</option>
-              <option value="USD">🇺🇸 USD</option>
+              <option value="AUD">AUD</option>
+              <option value="USD">USD</option>
             </select>
           </label>
           {cloudEnabled && (

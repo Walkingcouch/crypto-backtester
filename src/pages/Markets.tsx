@@ -3,7 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import CompareChart, { type CompareLine } from '../components/CompareChart'
 import { Info } from '../components/Info'
 import { fmtPrice, fmtVol, loadHistory, loadTickers, PERIODS, pricePath, type Coin, type Period } from '../lib/markets'
-import { BROKERS, useBroker, useBrokerPrices } from '../lib/brokers'
+import { BROKERS, useBroker, useBrokerPrices, useListings } from '../lib/brokers'
+import WhereToBuy from '../components/WhereToBuy'
 import { curSymbol, fxSeries, nowRate, rateAt, rateAtSmooth, useCurrency, type FxSeries } from '../lib/currency'
 
 type SortKey = 'return' | 'riskAdj' | 'volume' | 'volatility'
@@ -55,7 +56,9 @@ export default function Markets() {
   }
   const { broker, setBroker } = useBroker()
   const { quotes, at: quotesAt, error: quotesErr } = useBrokerPrices(broker)
-  const [onlyBroker, setOnlyBroker] = useState(true)
+  const [onlyBroker, setOnlyBroker] = useState(false)
+  const { listings, where } = useListings()
+  const canFilterBroker = !!listings && listings.ok.has(broker.id)
   const quoteOf = (c: Coin) => quotes?.get(c.base) ?? null
   /** Price now in the display currency. On CoinSpot (AUD), use CoinSpot's own last price. */
   const priceIn = (c: Coin) => {
@@ -100,12 +103,12 @@ export default function Markets() {
     return all
       .filter(c => c.quoteVolume * (rate ?? 1) >= minVol || selected.includes(c.base))
       .filter(c => !term || c.base.includes(term))
-      .filter(c => !(broker.livePrices && onlyBroker && quotes) || quotes.has(c.base) || selected.includes(c.base))
+      .filter(c => !(onlyBroker && canFilterBroker) || where(c.base).includes(broker.id) || selected.includes(c.base))
       .filter(c => { const pr = priceIn(c); if (pr == null) return true; return (minP === '' || pr >= +minP) && (maxP === '' || pr <= +maxP) })
       .filter(c => trendFilter === 'all' || c.trend === trendFilter)
       .map(c => ({ c, v: val(c) }))
       .sort((a, b) => (a.v == null ? 1 : b.v == null ? -1 : asc ? a.v - b.v : b.v - a.v))
-  }, [all, period, sortBy, asc, minVol, q, trendFilter, selected, minP, maxP, cur, rate, fx, quotes, onlyBroker, broker.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [all, period, sortBy, asc, minVol, q, trendFilter, selected, minP, maxP, cur, rate, fx, quotes, onlyBroker, broker.id, listings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const colorOf = (base: string) => PALETTE[selected.indexOf(base) % PALETTE.length]
 
@@ -148,14 +151,14 @@ export default function Markets() {
         <div className="broker-row">
           <label className="mini"><span>Your exchange</span>
             <select value={broker.id} onChange={e => setBroker(e.target.value)}>{BROKERS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label>
-          {broker.livePrices && (
+          {canFilterBroker && (
             <label className="toggle"><input type="checkbox" checked={onlyBroker} onChange={e => setOnlyBroker(e.target.checked)} /> Only coins on {broker.name}</label>
           )}
         </div>
         {broker.livePrices && (
           <div className="fx-note">
             {quotesErr ? <span className="neg">{quotesErr} Showing Binance prices instead.</span>
-              : quotes ? <>Live prices from <b>{broker.name}</b> ({quotes.size} coins listed){quotesAt && <span className="muted">· updated {new Date(quotesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+              : quotes ? <>Live prices from <b>{broker.name}</b> where available{quotesAt && <span className="muted">· updated {new Date(quotesAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
                 <Info>Prices shown are {broker.name}'s last traded AUD price. Rankings over time use Binance's price history (converted to {cur}), since {broker.name} doesn't publish history. Coins on {broker.name} that Binance doesn't list can't be ranked.</Info></>
               : `Loading ${broker.name} prices…`}
           </div>
@@ -195,6 +198,7 @@ export default function Markets() {
                 <span key={b} className="cl-item">
                   <i style={{ background: colorOf(b) }} /><b>{b}</b>
                   <span className={cls(c ? retIn(c, period) : null)}>{pctTxt(c ? retIn(c, period) : null)}</span>
+                  <WhereToBuy base={b} where={where(b)} known={listings?.ok ?? null} partial={listings?.partial} compact />
                   <Link to={`/?coin=${b}USDT`} className="small">Test</Link>
                   <button aria-label={`Remove ${b}`} onClick={() => toggle(b)}>×</button>
                 </span>
@@ -255,7 +259,7 @@ export default function Markets() {
                 <div key={c.symbol} className={`mkt-row ${on ? 'sel' : ''}`} onClick={() => toggle(c.base)}>
                   <span><span className="check" style={on ? { background: colorOf(c.base), borderColor: colorOf(c.base) } : undefined}>{on ? '✓' : ''}</span></span>
                   <span className="muted small">{i + 1}</span>
-                  <span className="coin"><b>{c.base}</b><span className="small muted show-sm">{fmtVol(c.quoteVolume * (rate ?? 1), sym)}{c.trend && <TrendTag t={c.trend} />}</span></span>
+                  <span className="coin"><span className="coin-top"><b>{c.base}</b><span className="hide-sm"><WhereToBuy base={c.base} where={where(c.base)} known={listings?.ok ?? null} partial={listings?.partial} /></span></span><span className="small muted show-sm">{fmtVol(c.quoteVolume * (rate ?? 1), sym)}{c.trend && <TrendTag t={c.trend} />}<WhereToBuy base={c.base} where={where(c.base)} known={listings?.ok ?? null} partial={listings?.partial} compact /></span></span>
                   <span className="r mono">{pr == null ? '…' : fmtPrice(pr)}</span>
                   <span className={`r ret ${cls(r)}`}>{r === undefined ? <span className="muted">…</span> : r === null ? <span className="muted small">new</span> : pctTxt(r)}</span>
                   <span className="r hide-sm">{c.trend ? <TrendTag t={c.trend} /> : <span className="muted">{c.historyDays ? '—' : '…'}</span>}</span>

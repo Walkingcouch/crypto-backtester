@@ -334,3 +334,26 @@ tr.hl td { background: var(--accent-soft); }
 .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; padding-bottom: 8px; }
 .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 .broker-select { max-width: 320px; font-weight: 600; }
+
+.wtb { position: relative; display: inline-flex; cursor: help; }
+.wtb .tag { white-space: nowrap; }
+.wtb-pop { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; min-width: 250px; display: grid; gap: 4px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.14); font-size: 13px; font-weight: 400; text-align: left; cursor: default; }
+.wtb-pop > b { font-size: 13.5px; margin-bottom: 2px; }
+.wtb-row { display: flex; gap: 8px; align-items: center; }
+.wtb-row > span { width: 14px; text-align: center; font-weight: 700; }
+.wtb-row.yes > span { color: var(--accent); }
+.wtb-row.no { color: var(--faint); }
+.wtb-row em { font-style: normal; color: var(--muted); font-size: 12px; }
+.wtb-foot { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+@media (max-width: 720px) { .wtb-pop { position: fixed; left: 16px; right: 16px; top: auto; bottom: 84px; } }
+.coin-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 720px) { .show-sm { flex-wrap: wrap; } .wtb.compact .tag { font-size: 11px; } }
+.wtb-row { white-space: nowrap; }
+.wtb-row > span:first-child { flex: none; }
+.wtb-row .wtb-name { width: auto; text-align: left; font-weight: 400; color: inherit; }
+.wtb-row em { margin-left: auto; padding-left: 10px; }
+.wtb-row em.mine { color: var(--accent); font-weight: 600; }
+.wtb-close { display: none; }
+@media (max-width: 720px) { .wtb-pop { z-index: 60; bottom: 96px; } .wtb-close { display: block; width: 100%; margin-top: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 9px; padding: 9px; font: 600 14px Inter, sans-serif; } }

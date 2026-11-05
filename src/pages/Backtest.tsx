@@ -12,7 +12,7 @@ import { addReveal, listReveals, saveRun, type Reveal } from '../lib/store'
 import { useAuth } from '../lib/auth'
 import { cloudEnabled } from '../lib/supabase'
 import { curSymbol, fmtMoney, fxSeries, rateAt, useCurrency, type Cur } from '../lib/currency'
-import { BROKERS, useBroker } from '../lib/brokers'
+import { BROKERS, useBroker, useListings } from '../lib/brokers'
 
 const COINS = [
   { sym: 'BTCUSDT', name: 'Bitcoin', tick: 'BTC' },
@@ -32,6 +32,7 @@ export default function Backtest() {
   const { session } = useAuth()
   const { cur } = useCurrency()
   const { broker, setBroker } = useBroker()
+  const { listings, where } = useListings()
   const [urlParams] = useSearchParams()
   const urlCoin = (urlParams.get('coin') || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
   const [coin, setCoin] = useState(urlCoin ? (COINS.some(c => c.sym === urlCoin) ? urlCoin : 'OTHER') : 'BTCUSDT')
@@ -191,6 +192,17 @@ export default function Backtest() {
             ))}
             <button className={`chip ${coin === 'OTHER' ? 'on' : ''}`} onClick={() => { setCoin('OTHER'); setSource('binance'); resetResults() }}><b>Other…</b><span>any</span></button>
           </div>
+          {listings && symbol && (() => {
+            const base = symbol.replace(/USDT$/, '')
+            const on = where(base)
+            const names = BROKERS.filter(b => b.id !== 'other' && on.includes(b.id)).map(b => b.name)
+            const mine = broker.id !== 'other' && listings.ok.has(broker.id) ? on.includes(broker.id) : null
+            const unsure = !on.includes(broker.id) && listings.partial.has(broker.id)
+            return <p className={`hint ${mine === false ? 'neg' : ''}`} style={{ marginTop: 10 }}>
+              {mine === false ? `${base} isn't listed on ${broker.name}. ` : ''}Available on: {names.join(', ')}.
+              {unsure ? ` ${broker.name} doesn't publish its full coin list, so check the ${broker.name} app for ${base}.` : ''}
+            </p>
+          })()}
           {coin === 'OTHER' && (
             <label className="field" style={{ marginTop: 10 }}>
               <span>Binance symbol (coin + USDT)</span>
