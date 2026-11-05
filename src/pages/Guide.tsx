@@ -37,7 +37,7 @@ export default function Guide() {
           <li><b>Pick a period</b> (24h, 7 days, 30 days, 90 days, 1 year) to rank by how much each coin moved.</li>
           <li><b>Rank by</b> return, return ÷ risk (reward per unit of bumpiness), 24h volume, or volatility. Flip the order to see the worst performers.</li>
           <li><b>Trend</b> shows Up when the price is above its 50-day average and the 50-day is above the 200-day, Down for the opposite, Mixed otherwise.</li>
-          <li><b>Price range</b>: type your lowest and highest price (or tap a preset like Under $1) to only see coins in that range.</li>
+          <li><b>Price range</b>: enter a Min price and a Max price to only see coins priced between them. Leave either box empty for no limit.</li>
           <li><b>Filter</b> by minimum daily volume to hide tiny, illiquid coins (the default hides coins trading under $1M a day), or show only uptrends or downtrends.</li>
           <li><b>Tap coins</b> (up to 8) to compare them on one chart. Every line starts at 0% so a $0.001 coin and a $60,000 coin compare fairly.</li>
           <li><b>Backtest →</b> on any row opens that coin on the Test page.</li>

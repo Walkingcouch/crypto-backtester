@@ -165,19 +165,12 @@ export default function Markets() {
         </div>
 
         <div className="price-range">
-          <div className="mini"><span>Price range (USD)</span>
-            <div className="pr-inputs">
-              <label className="pr-box"><span>$</span><input type="number" inputMode="decimal" min={0} placeholder="Lowest" value={minP} onChange={e => setMinP(e.target.value)} /></label>
-              <span className="muted">to</span>
-              <label className="pr-box"><span>$</span><input type="number" inputMode="decimal" min={0} placeholder="Highest" value={maxP} onChange={e => setMaxP(e.target.value)} /></label>
-            </div>
-          </div>
-          <div className="chips pr-chips">
-            {[['Any', '', ''], ['Under $1', '', '1'], ['$1–$10', '1', '10'], ['$10–$100', '10', '100'], ['$100+', '100', '']].map(([label, lo, hi]) => (
-              <button key={label} className={`chip chip-sm ${minP === lo && maxP === hi ? 'on' : ''}`} onClick={() => { setMinP(lo); setMaxP(hi) }}><b>{label}</b></button>
-            ))}
-          </div>
-          {minP !== '' && maxP !== '' && +minP > +maxP && <span className="hint neg">Lowest is above highest — no coins can match.</span>}
+          <label className="mini pr-field"><span>Min price ($)</span>
+            <input type="number" inputMode="decimal" min={0} step="any" placeholder="e.g. 0.50" value={minP} onChange={e => setMinP(e.target.value)} /></label>
+          <label className="mini pr-field"><span>Max price ($)</span>
+            <input type="number" inputMode="decimal" min={0} step="any" placeholder="e.g. 20" value={maxP} onChange={e => setMaxP(e.target.value)} /></label>
+          {(minP !== '' || maxP !== '') && <button className="btn btn-ghost btn-sm" onClick={() => { setMinP(''); setMaxP('') }}>Clear price range</button>}
+          {minP !== '' && maxP !== '' && +minP > +maxP && <span className="hint neg" style={{ flexBasis: '100%' }}>Min price is above max price, so no coins can match.</span>}
         </div>
 
         {progress && !historyReady && needsHistory && (

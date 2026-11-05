@@ -320,3 +320,6 @@ tr.hl td { background: var(--accent-soft); }
 .pr-box input { border: 0; box-shadow: none !important; padding: 7px 0; width: 96px; font-size: 14px; background: transparent; }
 .pr-chips .chip { min-width: 0; }
 @media (max-width: 560px) { .pr-inputs { width: 100%; } .pr-box { flex: 1; } .pr-box input { width: 100%; } .pr-chips .chip-sm { flex: 1 1 auto; } }
+.pr-field { flex: 1 1 140px; max-width: 200px; }
+.pr-field input { padding: 9px 11px; font-size: 15px; }
+@media (max-width: 560px) { .pr-field { max-width: none; } }
