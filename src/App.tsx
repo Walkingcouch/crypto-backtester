@@ -6,9 +6,11 @@ import Markets from './pages/Markets'
 import Account from './pages/Account'
 import { useAuth } from './lib/auth'
 import { cloudEnabled } from './lib/supabase'
+import { useCurrency, type Cur } from './lib/currency'
 
 export default function App() {
   const { session, name } = useAuth()
+  const { cur, setCur } = useCurrency()
   return (
     <>
       <header className="topbar">
@@ -25,6 +27,13 @@ export default function App() {
             <NavLink to="/history">History</NavLink>
             <NavLink to="/guide">Guide</NavLink>
           </nav>
+          <label className="cur-select" title="Show prices in">
+            <span className="sr-only">Currency</span>
+            <select value={cur} onChange={e => setCur(e.target.value as Cur)} aria-label="Currency">
+              <option value="AUD">🇦🇺 AUD</option>
+              <option value="USD">🇺🇸 USD</option>
+            </select>
+          </label>
           {cloudEnabled && (
             <Link to="/account" className="btn btn-ghost btn-sm">{session ? name || 'Account' : 'Sign in'}</Link>
           )}

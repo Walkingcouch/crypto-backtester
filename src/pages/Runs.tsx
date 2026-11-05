@@ -4,6 +4,7 @@ import { deleteRun, listRuns, type SavedRun } from '../lib/store'
 import { useAuth } from '../lib/auth'
 import { cloudEnabled } from '../lib/supabase'
 import { num, paramStr, pct, sign } from '../lib/format'
+import { fmtMoney, type Cur } from '../lib/currency'
 
 export default function Runs({ embedded = false }: { embedded?: boolean }) {
   const { session, ready } = useAuth()
@@ -36,7 +37,7 @@ export default function Runs({ embedded = false }: { embedded?: boolean }) {
                     <div className="small muted">
                       {r.author ? `${r.author} · ` : ''}{new Date(r.created_at!).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                       {' · '}settings <span className="mono">{paramStr(r.params)}</span>
-                      {' · '}fee {pct(Number(s.fee), 2)} · cash ${s.cash}
+                      {' · '}fee {pct(Number(s.fee), 2)} · start {fmtMoney(Number(s.cash), (s.currency as Cur) || 'USD', 0)}
                     </div>
                   </div>
                   {mine && <button className="btn btn-ghost btn-sm" onClick={async () => { if (confirm('Delete this saved run?')) { await deleteRun(r.id!); load() } }}>Delete</button>}

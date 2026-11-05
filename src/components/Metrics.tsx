@@ -1,6 +1,7 @@
 import type { Metrics } from '../lib/engine'
 import { money, money0, num, pct, sign } from '../lib/format'
 import { Info } from './Info'
+import type { Cur } from '../lib/currency'
 
 export const EXPLAIN = {
   sharpe: 'Return per unit of bumpiness, per year. Higher is better. Around 1 or more is good for a simple strategy; holding crypto is often 0.5–1.2.',
@@ -22,18 +23,18 @@ export function scoreLabel(sharpe: number) {
 }
 
 /** The plain-English headline: "$200 → $X" vs holding. */
-export function Headline({ m, bench, cash }: { m: Metrics; bench: Metrics; cash: number }) {
+export function Headline({ m, bench, cash, cur }: { m: Metrics; bench: Metrics; cash: number; cur?: Cur }) {
   const s = scoreLabel(m.sharpe), b = scoreLabel(bench.sharpe)
   return (
     <div className="headline">
       <div className="headline-main">
         <div className="hl-label">Strategy</div>
-        <div className="hl-value">{money0(cash)} <span className="arrow">→</span> <span className={sign(m.totalReturn)}>{money0(m.finalEquity)}</span></div>
+        <div className="hl-value">{money0(cash, cur)} <span className="arrow">→</span> <span className={sign(m.totalReturn)}>{money0(m.finalEquity, cur)}</span></div>
         <div className="hl-sub">{pct(m.totalReturn)} total · {pct(m.cagr)} a year</div>
       </div>
       <div className="headline-bench">
         <div className="hl-label">If you'd just bought and held</div>
-        <div className="hl-value small-v">{money0(cash)} <span className="arrow">→</span> {money0(bench.finalEquity)}</div>
+        <div className="hl-value small-v">{money0(cash, cur)} <span className="arrow">→</span> {money0(bench.finalEquity, cur)}</div>
         <div className="hl-sub">{pct(bench.totalReturn)} total</div>
       </div>
       <div className="stat-row">
@@ -50,7 +51,7 @@ export function Headline({ m, bench, cash }: { m: Metrics; bench: Metrics; cash:
         <div className="stat">
           <div className="stat-label">Trades <Info>{EXPLAIN.trades}</Info></div>
           <div className="stat-value">{m.trades}</div>
-          <div className="stat-sub">{money(m.feesPaid)} in fees</div>
+          <div className="stat-sub">{money(m.feesPaid, cur)} in fees</div>
         </div>
       </div>
     </div>
@@ -83,14 +84,14 @@ const ROWS: [keyof Metrics, string, (x: number) => string, string?][] = [
   ['winRate', 'Winning rounds', pct, EXPLAIN.winRate], ['feesPaid', 'Fees paid', money], ['timeInMarket', 'Time holding coins', pct, EXPLAIN.timeInMarket],
 ]
 
-export function MetricTable({ cols }: { cols: { name: string; m: Metrics }[] }) {
+export function MetricTable({ cols, cur }: { cols: { name: string; m: Metrics }[]; cur?: Cur }) {
   return (
     <div className="table-wrap">
       <table>
         <thead><tr><th>Measure</th>{cols.map(c => <th key={c.name}>{c.name}</th>)}</tr></thead>
         <tbody>
           {ROWS.map(([k, label, f, tip]) => (
-            <tr key={k}><td>{label}{tip && <> <Info>{tip}</Info></>}</td>{cols.map(c => <td key={c.name}>{f(c.m[k] as number)}</td>)}</tr>
+            <tr key={k}><td>{label}{tip && <> <Info>{tip}</Info></>}</td>{cols.map(c => <td key={c.name}>{k === 'finalEquity' || k === 'feesPaid' ? money(c.m[k] as number, cur) : f(c.m[k] as number)}</td>)}</tr>
           ))}
         </tbody>
       </table>

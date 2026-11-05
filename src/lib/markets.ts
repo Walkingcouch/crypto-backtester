@@ -107,5 +107,5 @@ export const fmtPrice = (p: number) =>
     : p >= 1 ? p.toLocaleString(undefined, { maximumFractionDigits: 3 })
       : p.toPrecision(3)
 
-export const fmtVol = (v: number) =>
-  v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(0)}K` : `$${v.toFixed(0)}`
+export const fmtVol = (v: number, sym = '$') =>
+  v >= 1e9 ? `${sym}${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `${sym}${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${sym}${(v / 1e3).toFixed(0)}K` : `${sym}${v.toFixed(0)}`

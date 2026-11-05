@@ -1,1 +1,1 @@
-{ "rewrites": [{ "source": "/((?!assets/|crypto-backtester-python.zip|favicon.svg).*)", "destination": "/index.html" }] }
+{ "rewrites": [{ "source": "/((?!api/|assets/|crypto-backtester-python.zip|favicon.svg).*)", "destination": "/index.html" }] }

@@ -11,6 +11,8 @@ import { byId, STRATEGIES } from '../lib/strategies'
 import { addReveal, listReveals, saveRun, type Reveal } from '../lib/store'
 import { useAuth } from '../lib/auth'
 import { cloudEnabled } from '../lib/supabase'
+import { curSymbol, fmtMoney, fxSeries, rateAt, useCurrency, type Cur } from '../lib/currency'
+import { BROKERS, useBroker } from '../lib/brokers'
 
 const COINS = [
   { sym: 'BTCUSDT', name: 'Bitcoin', tick: 'BTC' },
@@ -21,24 +23,23 @@ const COINS = [
   { sym: 'DOGEUSDT', name: 'Dogecoin', tick: 'DOGE' },
 ]
 const AMOUNTS = [100, 200, 500, 1000]
-const FEES = [
-  { label: 'Exchange order', sub: '0.1%', v: 0.1 },
-  { label: 'App instant buy', sub: '~1%', v: 1 },
-]
 const color = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
 const year = (t: number) => new Date(t).getUTCFullYear()
 
-interface Loaded { bars: Bar[]; symbol: string; label: string; interval: string; testStartIndex: number }
+interface Loaded { bars: Bar[]; symbol: string; label: string; interval: string; testStartIndex: number; cur: Cur; converted: boolean }
 
 export default function Backtest() {
   const { session } = useAuth()
+  const { cur } = useCurrency()
+  const { broker, setBroker } = useBroker()
   const [urlParams] = useSearchParams()
   const urlCoin = (urlParams.get('coin') || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
   const [coin, setCoin] = useState(urlCoin ? (COINS.some(c => c.sym === urlCoin) ? urlCoin : 'OTHER') : 'BTCUSDT')
   const [otherCoin, setOtherCoin] = useState(urlCoin && !COINS.some(c => c.sym === urlCoin) ? urlCoin : '')
   const [strategyId, setStrategyId] = useState('sma_cross')
   const [cash, setCash] = useState(200)
-  const [feePct, setFeePct] = useState(0.1)
+  const [feePct, setFeePct] = useState(() => broker.fees[0].fee)
+  useEffect(() => { setFeePct(broker.fees[0].fee) }, [broker.id])
   // advanced
   const [source, setSource] = useState<'binance' | 'csv'>('binance')
   const [interval, setInterval] = useState('1d')
@@ -64,6 +65,8 @@ export default function Backtest() {
   const symbol = coin === 'OTHER' ? otherCoin : coin
   const coinLabel = COINS.find(c => c.sym === symbol)?.name ?? symbol.replace(/USDT$/, '')
 
+  // results are in one currency; switching currency means re-running
+  useEffect(() => { resetResults() }, [cur]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (train) resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [train])
   useEffect(() => { if (test) testRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }, [test])
 
@@ -81,13 +84,18 @@ export default function Backtest() {
         setBusy(`Getting ${coinLabel} prices…`)
         bars = await fetchCandles(symbol, interval, since, n => setBusy(`Getting ${coinLabel} prices… ${n.toLocaleString()} days`))
         sym = symbol; label = coinLabel; iv = interval
+        if (cur === 'AUD') {
+          setBusy('Converting to AUD with each day\'s exchange rate…')
+          const fx = await fxSeries(bars[0].t, bars[bars.length - 1].t)
+          bars = bars.map(b => { const r = rateAt(fx, b.t); return { ...b, o: b.o * r, h: b.h * r, l: b.l * r, c: b.c * r } })
+        }
       }
       if (bars.length < 400) throw new Error(`Only ${bars.length} candles of history — need at least 400. Try an earlier start date under More options.`)
       setBusy('Testing the strategy on past prices…')
       await new Promise(r => setTimeout(r, 30))
       const sp = splitBars(bars, testPct / 100)
       const out = optimiseOnTrain(sp.train, strategy, cash, costs, score)
-      setLoaded({ bars, symbol: sym, label, interval: iv, testStartIndex: sp.testStartIndex })
+      setLoaded({ bars, symbol: sym, label, interval: iv, testStartIndex: sp.testStartIndex, cur, converted: cur === 'AUD' && source !== 'csv' })
       setTrain(out)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -136,7 +144,7 @@ export default function Backtest() {
       await saveRun({
         title: `${strategy.friendly ?? strategy.name} · ${loaded.label}`,
         strategy_id: strategy.id, symbol: loaded.symbol, interval: loaded.interval,
-        settings: { cash, fee: costs.fee, slippage: costs.slippage, testPct, score, since, train_from: day(loaded.bars[0].t), test_from: day(loaded.bars[loaded.testStartIndex].t), test_to: day(loaded.bars[loaded.bars.length - 1].t) },
+        settings: { cash, currency: loaded.cur, broker: broker.name, fee: costs.fee, slippage: costs.slippage, testPct, score, since, train_from: day(loaded.bars[0].t), test_from: day(loaded.bars[loaded.testStartIndex].t), test_to: day(loaded.bars[loaded.bars.length - 1].t) },
         params: train.best.params,
         train_metrics: train.best.metrics as unknown as Record<string, number>,
         test_metrics: test ? (test.r.metrics as unknown as Record<string, number>) : null,
@@ -217,17 +225,28 @@ export default function Backtest() {
         <div className="q">
           <div className="q-title"><span className="q-num">3</span>Starting amount</div>
           <div className="chips">
-            {AMOUNTS.map(a => <button key={a} className={`chip chip-sm ${cash === a ? 'on' : ''}`} onClick={() => setCash(a)}><b>${a.toLocaleString()}</b></button>)}
-            <label className="chip chip-sm chip-input"><span>$</span><input type="number" min={10} value={AMOUNTS.includes(cash) ? '' : cash} placeholder="Other" onChange={e => e.target.value && setCash(Math.max(10, +e.target.value))} /></label>
+            {AMOUNTS.map(a => <button key={a} className={`chip chip-sm ${cash === a ? 'on' : ''}`} onClick={() => setCash(a)}><b>{curSymbol(cur)}{a.toLocaleString()}</b></button>)}
+            <label className="chip chip-sm chip-input"><span>{curSymbol(cur)}</span><input type="number" min={10} value={AMOUNTS.includes(cash) ? '' : cash} placeholder="Other" onChange={e => e.target.value && setCash(Math.max(10, +e.target.value))} /></label>
           </div>
         </div>
 
         <div className="q">
-          <div className="q-title"><span className="q-num">4</span>Your trading fee <Info>Every buy and sell costs a fee. Order-book trades on an exchange are usually around 0.1%. "Instant buy" buttons in retail apps often charge around 1% or more. Check your exchange's fee page.</Info></div>
-          <div className="chips">
-            {FEES.map(f => <button key={f.v} className={`chip chip-sm ${feePct === f.v ? 'on' : ''}`} onClick={() => setFeePct(f.v)}><b>{f.label}</b><span>{f.sub}</span></button>)}
-            <label className="chip chip-sm chip-input"><input type="number" step={0.05} min={0} value={FEES.some(f => f.v === feePct) ? '' : feePct} placeholder="Other" onChange={e => e.target.value !== '' && setFeePct(Math.max(0, +e.target.value))} /><span>%</span></label>
+          <div className="q-title"><span className="q-num">4</span>Where do you trade? <Info>Every buy and sell costs a fee, and it varies a lot between exchanges and order types. We use your exchange's published fee at the lowest volume tier. You can type your own if yours is different.</Info></div>
+          <select className="broker-select" value={broker.id} onChange={e => setBroker(e.target.value)} aria-label="Your exchange">
+            {BROKERS.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <div className="chips" style={{ marginTop: 10 }}>
+            {broker.fees.map(f => (
+              <button key={f.label} className={`chip chip-sm ${feePct === f.fee ? 'on' : ''}`} onClick={() => setFeePct(f.fee)} title={f.note}>
+                <b>{f.label}</b><span>{f.fee}% per trade</span>
+              </button>
+            ))}
+            <label className="chip chip-sm chip-input"><input type="number" step={0.05} min={0} value={broker.fees.some(f => f.fee === feePct) ? '' : feePct} placeholder="Other" onChange={e => e.target.value !== '' && setFeePct(Math.max(0, +e.target.value))} /><span>%</span></label>
           </div>
+          <p className="hint" style={{ marginTop: 8 }}>
+            {broker.id === 'other' ? 'Pick the fee closest to what you pay, or type it.' : `${broker.name}'s published fees (lowest volume tier, checked Nov 2026).`}
+            {' '}Price history comes from Binance, the deepest market{cur === 'AUD' ? ', converted to AUD with each day\'s exchange rate' : ''}. It tracks {broker.id === 'other' ? 'other exchanges' : broker.name} closely.
+          </p>
         </div>
 
         <Disclosure title="More options">
@@ -258,7 +277,7 @@ export default function Backtest() {
               try { setCsv({ name: f.name, bars: parseCsv(await f.text()) }); setSource('csv'); setError(null); resetResults() }
               catch (err) { setCsv(null); setSource('binance'); setError(err instanceof Error ? err.message : String(err)) }
             }} />
-            <span className="hint">{source === 'csv' && csv ? `Using ${csv.name}: ${csv.bars.length.toLocaleString()} candles, ${day(csv.bars[0].t)} → ${day(csv.bars[csv.bars.length - 1].t)}` : 'Columns: timestamp, open, high, low, close, volume. Useful for AUD prices or other exchanges.'}</span>
+            <span className="hint">{source === 'csv' && csv ? `Using ${csv.name}: ${csv.bars.length.toLocaleString()} candles, ${day(csv.bars[0].t)} → ${day(csv.bars[csv.bars.length - 1].t)}` : `Columns: timestamp, open, high, low, close, volume. Prices are treated as ${cur}.`}</span>
           </label>
         </Disclosure>
 
@@ -274,10 +293,10 @@ export default function Backtest() {
           <div className="step-head">
             <span className="step-badge">Result 1 of 2</span>
             <h2>Older prices · {year(train.best.t[0])}–{year(train.best.t[train.best.t.length - 1])}</h2>
-            <p className="muted small">{sName} on {loaded.label}, starting with ${cash.toLocaleString()}, {pct(costs.fee, 2)} fee per trade.</p>
+            <p className="muted small">{sName} on {loaded.label}, starting with {fmtMoney(cash, loaded.cur, 0)}, {pct(costs.fee, 2)} fee per trade ({broker.name}).{loaded.converted && ' Prices converted to AUD using each day\'s ECB exchange rate.'}</p>
           </div>
           <div className={`verdict ${trainV.cls}`}><b>{trainV.title}</b><span>{trainV.body}</span></div>
-          <Headline m={train.best.metrics} bench={train.benchmark.metrics} cash={cash} />
+          <Headline m={train.best.metrics} bench={train.benchmark.metrics} cash={cash} cur={loaded.cur} />
           <EquityChart lines={trainLines} />
           <p className="hint">Tuned on these prices, so this result flatters the strategy. The final check below is the honest one.</p>
 
@@ -294,7 +313,7 @@ export default function Backtest() {
                 </table>
               </div>
             </>}
-            <TradeTable r={train.best} />
+            <TradeTable r={train.best} cur={loaded.cur} />
           </Disclosure>
         </section>
       )}
@@ -338,9 +357,9 @@ export default function Backtest() {
                   ? 'Consistent: it did about as well or better on new prices as on the older ones, so the settings weren\'t just fitted to past luck.'
                   : `Faded: its score dropped from ${num(train.best.metrics.sharpe)} to ${num(test.r.metrics.sharpe)} on new prices. The tuned settings may have just fitted past luck.`}
               </div>
-              <Headline m={test.r.metrics} bench={test.bench.metrics} cash={cash} />
+              <Headline m={test.r.metrics} bench={test.bench.metrics} cash={cash} cur={loaded.cur} />
               <EquityChart lines={testLines} />
-              <Disclosure title="Trades during the final check"><TradeTable r={test.r} /></Disclosure>
+              <Disclosure title="Trades during the final check"><TradeTable r={test.r} cur={loaded!.cur} /></Disclosure>
             </>
           )}
         </section>
@@ -359,7 +378,7 @@ export default function Backtest() {
             {saved ? <span className="tag green">Saved ✓</span> : <button className="btn btn-ghost" onClick={save}>Save result</button>}
           </div>
           <Disclosure title="All the numbers">
-            <MetricTable cols={[
+            <MetricTable cur={loaded?.cur} cols={[
               { name: 'Older · strategy', m: train.best.metrics }, { name: 'Older · holding', m: train.benchmark.metrics },
               ...(test ? [{ name: 'Recent · strategy', m: test.r.metrics }, { name: 'Recent · holding', m: test.bench.metrics }] : []),
             ]} />
@@ -370,7 +389,7 @@ export default function Backtest() {
   )
 }
 
-function TradeTable({ r }: { r: Result }) {
+function TradeTable({ r, cur }: { r: Result; cur: Cur }) {
   if (!r.trades.length) return <p className="muted small">No trades.</p>
   return (
     <div className="table-wrap">
@@ -380,7 +399,7 @@ function TradeTable({ r }: { r: Result }) {
           {r.trades.slice(-60).reverse().map((t, i) => (
             <tr key={i}><td>{day(t.t)}</td><td className={t.side === 'BUY' ? 'pos' : 'neg'}>{t.side === 'BUY' ? 'Buy' : 'Sell'}</td>
               <td>{t.price.toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-              <td>${t.fee.toFixed(2)}</td><td>${t.cashAfter.toFixed(2)}</td></tr>
+              <td>{fmtMoney(t.fee, cur)}</td><td>{fmtMoney(t.cashAfter, cur)}</td></tr>
           ))}
         </tbody>
       </table>

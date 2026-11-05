@@ -8,7 +8,7 @@ export default function Guide() {
           <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
-            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#markets">Markets</a><a href="#read">Reading results</a>
+            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#read">Reading results</a>
             <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
@@ -30,6 +30,20 @@ export default function Guide() {
           <li><b>Run the final check</b> when you're happy. The strategy is tested once on recent prices it has never seen. This is the result that counts, and it's recorded in <Link to="/history?tab=checks">History</Link>.</li>
           <li><b>Save the result</b> to compare later or share with your partner.</li>
         </ol>
+
+        <h2 id="exchange">Your exchange (e.g. CoinSpot) and currency</h2>
+        <p>Pick where you actually trade, so the numbers match what you'd really pay. On the Test page it's question 4, <b>Where do you trade?</b>; on Markets it's the <b>Your exchange</b> dropdown. Your choice is remembered.</p>
+        <ul>
+          <li><b>CoinSpot:</b> <i>Market / limit order</i> 0.1% per trade, or <i>Instant buy / sell</i> 1% (the quick Buy button). Markets shows CoinSpot's own live AUD prices and, by default, only coins listed on CoinSpot.</li>
+          <li><b>Swyftx</b> 0.6% · <b>Independent Reserve</b> 0.5% · <b>BTC Markets</b> 0.85% (AUD markets, lowest tier) · <b>Kraken Pro</b> 0.40% market / 0.25% limit · <b>Binance</b> 0.1%.</li>
+          <li>These are the published fees at the lowest volume tier, checked November 2026. Exchanges change fees, so type your own under "Other" if yours differs.</li>
+        </ul>
+        <p><b>Currency:</b> use the <b>AUD / USD</b> dropdown at the top of every page. In AUD:</p>
+        <ul>
+          <li>Today's prices use the live USDT→AUD rate (CoinGecko), or CoinSpot's own price when CoinSpot is your exchange.</li>
+          <li>Backtests, returns and comparison charts convert each day at that day's official ECB USD→AUD rate. AUD results therefore include exchange-rate moves, just as your real AUD balance would.</li>
+        </ul>
+        <p className="muted">Price history comes from Binance, the world's deepest crypto market, because most Australian exchanges (including CoinSpot) don't publish full price history. Prices across big exchanges track each other closely.</p>
 
         <h2 id="markets">Markets: ranking and comparing coins</h2>
         <p>The <Link to="/markets">Markets</Link> page lists every actively traded coin on Binance (USDT pairs) and ranks them.</p>
