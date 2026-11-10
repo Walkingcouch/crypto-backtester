@@ -389,3 +389,20 @@ table.record td:first-child { white-space: nowrap; }
 @media (max-width: 720px) { .page.narrow .mkt-row { grid-template-columns: 26px 26px minmax(0, 1fr) auto 76px; } .predict-bar { top: 56px; } }
 .cl-item.cl-focus { border-color: var(--accent); }
 .cl-link { border: 0 !important; background: none !important; width: auto !important; height: auto !important; color: var(--accent) !important; font: 600 13px Inter, sans-serif !important; padding: 0 4px !important; cursor: pointer; }
+
+/* ---------- picks ---------- */
+.pick-list { display: grid; gap: 8px; }
+.pick { display: flex; gap: 14px; align-items: center; justify-content: space-between; border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.pick-cash { background: var(--surface-2); }
+.pick-main { display: grid; gap: 6px; min-width: 0; }
+.pick-name { display: flex; align-items: center; gap: 8px; font-size: 17px; }
+.pick-reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.pick-amt { text-align: right; flex: none; }
+.pick-w { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pick-money { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pick-links { display: flex; gap: 10px; justify-content: flex-end; font-size: 13px; margin-top: 2px; }
+.watch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 560px) { .watch-grid { grid-template-columns: 1fr; } }
+.watch-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.how-list { padding-left: 20px; } .how-list li { margin-bottom: 8px; }
+.sources { padding-left: 18px; } .sources li { margin-bottom: 8px; line-height: 1.45; }

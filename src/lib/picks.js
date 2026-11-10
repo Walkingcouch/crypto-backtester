@@ -69,7 +69,8 @@ export function analyseCoin(coin, i, S = SETTINGS) {
 
 /** The recommendation on day i: universe, each coin's verdict, and target weights. */
 export function picksAt(data, i, S = SETTINGS) {
-  const all = data.coins.map(c => analyseCoin(c, i, S)).filter(Boolean)
+  // drop anything that barely moves (stablecoins and pegged tokens look 'calm' but aren't investments)
+  const all = data.coins.map(c => analyseCoin(c, i, S)).filter(a => a && a.vol >= 0.15)
   const universe = all.sort((a, b) => b.avgVolume - a.avgVolume).slice(0, S.universe)
   let total = 0
   for (const a of universe) {
