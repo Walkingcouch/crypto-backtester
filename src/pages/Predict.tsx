@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import FanChart, { OutcomeBars } from '../components/FanChart'
 import { Info } from '../components/Info'
 import Chatter, { type ChatterData } from '../components/Chatter'
+import CoinTable, { MarketNotes } from '../components/CoinTable'
+import { useCoinMarket } from '../lib/useCoinMarket'
 import { fetchCandles } from '../lib/data'
 import { attachMood, forecastAt, HORIZONS, moodZones, prepare, trackRecord, type Forecast, type Prepared, type TrackRecord } from '../lib/forecast'
 import { fmtMoney, fxSeries, nowRate, rateAt, useCurrency, type Cur, type FxSeries } from '../lib/currency'
@@ -31,7 +33,7 @@ export default function Predict() {
   const { cur, live: liveFx } = useCurrency()
   const symParam = (params.get('coin') || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '')
   const h = HORIZONS.some(x => x.days === +(params.get('h') || 0)) ? +(params.get('h') as string) : 30
-  const [other, setOther] = useState(COINS.some(c => c.sym === symParam) ? '' : symParam)
+  const [, setOther] = useState(COINS.some(c => c.sym === symParam) ? '' : symParam)
   const [data, setData] = useState<Loaded | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -44,6 +46,9 @@ export default function Predict() {
   const [track, setTrack] = useState<{ tracked?: string | false; saved?: unknown; error?: string } | null>(null)
   const [logBump, setLogBump] = useState(0)
 
+  const M = useCoinMarket({ keep: [symParam.replace(/USDT$/, '')], pageSize: 25 })
+  const [listOpen, setListOpen] = useState(true)
+  const forecastRef = useRef<HTMLDivElement>(null)
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }) }
   const symbol = symParam
   const base = symbol.replace(/USDT$/, '')
@@ -167,17 +172,31 @@ export default function Predict() {
       </div>
 
       <section className="card">
-        <div className="chips">
+        <div className="card-title">
+          <div><h2 style={{ margin: 0 }}>Choose a coin</h2>
+            <div className="small muted">Rank and filter every coin, then tap one to see its prediction.</div></div>
+          <button className="btn btn-ghost btn-sm" onClick={() => setListOpen(o => !o)}>{listOpen ? 'Hide list' : `Show all coins${M.all.length ? ` (${M.all.length})` : ''}`}</button>
+        </div>
+        <div className="chips" style={{ marginBottom: 12 }}>
           {COINS.map(c => (
             <button key={c.sym} className={`chip chip-sm ${symbol === c.sym ? 'on' : ''}`} onClick={() => { setOther(''); set('coin', c.sym) }}><b>{c.name}</b></button>
           ))}
-          <label className="chip chip-sm chip-input">
-            <input className="other-coin" placeholder="Other coin, e.g. LINK" value={other} onChange={e => setOther(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-              onKeyDown={e => { if (e.key === 'Enter' && other) set('coin', other.endsWith('USDT') ? other : other + 'USDT') }}
-              onBlur={() => { if (other) set('coin', other.endsWith('USDT') ? other : other + 'USDT') }} />
-          </label>
         </div>
-        <div className="predict-controls">
+        {listOpen && (
+          <>
+            <MarketNotes M={M} />
+            <div style={{ height: 12 }} />
+            <CoinTable M={M} mode="pick" selected={[base]} onRow={b => {
+              setOther(''); set('coin', b + 'USDT'); setListOpen(false)
+              window.setTimeout(() => forecastRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
+            }} />
+          </>
+        )}
+      </section>
+
+      <section className="card predict-bar" ref={forecastRef}>
+        <div className="predict-controls" style={{ marginTop: 0 }}>
+          <div><div className="small muted">Predicting</div><div className="pb-coin">{coinName}{coinName !== base && <span className="muted"> {base}</span>}</div></div>
           <label className="mini"><span>Forecast for</span>
             <select value={h} onChange={e => set('h', e.target.value)} className="horizon-select">
               {HORIZONS.map(x => <option key={x.days} value={x.days}>{x.label}</option>)}

@@ -60,7 +60,7 @@ export default function Guide() {
           A coin topping the list recently says nothing reliable about the next month. Use the Test page to check whether a rule would have worked.</p>
 
         <h2 id="predict">Predictions</h2>
-        <p>The <Link to="/predict">Predict</Link> page estimates where a coin's price could be in <b>7 days, 14 days, 1 month or 3 months</b> (pick from the dropdown). It never claims to know the direction. It tells you how wide the realistic range is, and shows its own track record so you can judge how far to trust it.</p>
+        <p>Pick a coin from the quick buttons or the full coin list (the same ranking, filters, price range and where-to-buy badges as Markets). The <Link to="/predict">Predict</Link> page then estimates where a coin's price could be in <b>7 days, 14 days, 1 month or 3 months</b> (pick from the dropdown). It never claims to know the direction. It tells you how wide the realistic range is, and shows its own track record so you can judge how far to trust it.</p>
         <ul>
           <li><b>Likely range (80%)</b>: the price ended inside this range about 8 times in 10 when we tested the same method on past days. The 50% and 90% ranges work the same way. They're based on how wild the coin is right now, blended with its long-term behaviour, and they're centred on today's price.</li>
           <li><b>Chance it's higher</b>: from similar past moments, blended with how often the coin rose over that period in general. For every coin we've tested, direction is close to a coin flip, and the page says so.</li>
