@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { Levels } from '../lib/forecast'
 
 /** Past prices plus a forecast "fan" (50/80/90% ranges) drawn as SVG on a log scale. */
-export default function FanChart({ t, prices, levels, h, fmt }: {
-  t: number[]; prices: number[]; levels: Levels; h: number; fmt: (x: number) => string
+export default function FanChart({ t, prices, levels, h, fmt, target }: {
+  t: number[]; prices: number[]; levels: Levels; h: number; fmt: (x: number) => string; target: number
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [cw, setCw] = useState(900)
@@ -16,14 +16,12 @@ export default function FanChart({ t, prices, levels, h, fmt }: {
   const W = cw, H = cw < 500 ? 280 : 340, padL = 4, padR = cw < 500 ? 78 : 92, padT = 16, padB = 30
   const DAY = 86_400_000
   const t0 = t[0], tNow = t[t.length - 1], tEnd = tNow + h * DAY
-  const all = [...prices, levels.p5, levels.p95]
+  const all = [...prices, levels.p10, levels.p90, target]
   const lo = Math.log(Math.min(...all) * 0.97), hi = Math.log(Math.max(...all) * 1.03)
   const x = (ms: number) => padL + ((ms - t0) / (tEnd - t0)) * (W - padL - padR)
   const y = (p: number) => padT + (1 - (Math.log(p) - lo) / (hi - lo)) * (H - padT - padB)
   const path = prices.map((p, i) => `${i ? 'L' : 'M'}${x(t[i]).toFixed(1)},${y(p).toFixed(1)}`).join('')
   const last = prices[prices.length - 1]
-  const band = (a: number, b: number) =>
-    `M${x(tNow)},${y(last)} L${x(tEnd)},${y(b)} L${x(tEnd)},${y(a)} Z`
   // time ticks: month starts
   const ticks: number[] = []
   const d = new Date(t0); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0)
@@ -44,18 +42,17 @@ export default function FanChart({ t, prices, levels, h, fmt }: {
         </g>
       ))}
       <rect x={x(tNow)} y={padT} width={x(tEnd) - x(tNow)} height={H - padT - padB} fill="var(--surface-2)" />
-      <path d={band(levels.p5, levels.p95)} fill="var(--accent)" opacity="0.12" />
-      <path d={band(levels.p10, levels.p90)} fill="var(--accent)" opacity="0.18" />
-      <path d={band(levels.p25, levels.p75)} fill="var(--accent)" opacity="0.28" />
-      <line x1={x(tNow)} y1={y(last)} x2={x(tEnd)} y2={y(last)} stroke="var(--accent)" strokeDasharray="5 4" strokeWidth="1.5" />
+      <line x1={x(tNow)} y1={y(last)} x2={x(tEnd)} y2={y(levels.p90)} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth="1.2" opacity="0.8" />
+      <line x1={x(tNow)} y1={y(last)} x2={x(tEnd)} y2={y(levels.p10)} stroke="var(--accent)" strokeDasharray="4 4" strokeWidth="1.2" opacity="0.8" />
+      <line x1={x(tNow)} y1={y(last)} x2={x(tEnd)} y2={y(target)} stroke="var(--accent)" strokeWidth="4.5" strokeLinecap="round" />
+      <circle cx={x(tEnd)} cy={y(target)} r="6" fill="var(--accent)" stroke="var(--surface)" strokeWidth="2" />
       <path d={path} fill="none" stroke="var(--text)" strokeWidth="1.8" />
       <circle cx={x(tNow)} cy={y(last)} r="4" fill="var(--text)" />
       <line x1={x(tNow)} x2={x(tNow)} y1={padT} y2={H - padB} stroke="var(--faint)" strokeDasharray="3 3" />
       <text x={x(tNow) - 6} y={padT + 12} fontSize="12" fill="var(--muted)" textAnchor="end">today</text>
       {label(fmt(levels.p90), levels.p90)}
-      {label(fmt(levels.p75), levels.p75)}
-      {label(fmt(last), last, true)}
-      {label(fmt(levels.p25), levels.p25)}
+      {Math.abs(Math.log(target / last)) > 0.04 && label(fmt(last), last)}
+      <text x={W - padR + 8} y={y(target) + 4} fontSize="13" fill="var(--accent)" fontWeight={700}>{fmt(target)}</text>
       {label(fmt(levels.p10), levels.p10)}
     </svg>
     </div>

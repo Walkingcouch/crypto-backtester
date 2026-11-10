@@ -217,8 +217,8 @@ export default function Predict() {
               <span className="tag">{pct(f.situation.r30)} in 30 days</span>
               <span className="tag">Volatility {volTxt} ({Math.round(f.situation.volPct * 100)}th percentile)</span>
             </div>
-            <FanChart t={chart.t} prices={chart.prices} levels={chart.levels} h={h} fmt={fmt} />
-            <p className="hint">Shaded: 50%, 80% and 90% ranges. The range is centred on today's price, with no guess about direction.
+            <FanChart t={chart.t} prices={chart.prices} levels={chart.levels} h={h} fmt={fmt} target={chart.prices[chart.prices.length - 1] * (1 + (Number.isFinite(f.analog.median) ? f.analog.median : 0))} />
+            <p className="hint">Heavy line: today's price to the typical result in similar past moments ({pct(f.analog.median, 1)}). Dashed lines: the likely (80%) range. Direction is the least reliable part, so check the track record below.
               {cur === 'AUD' && ' Converted at today\'s exchange rate.'}</p>
           </section>
 
