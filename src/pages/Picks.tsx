@@ -148,7 +148,7 @@ export default function Picks() {
               <div className="step-head">
                 <span className="step-badge">Track record</span>
                 <h2>If you'd followed these picks since {new Date(test.start).getFullYear()}</h2>
-                <p className="muted small">Re-run week by week using only prices known at the time, trading the day after each decision, paying {pct0(test.fee).replace('%', '')}% fees plus slippage. Starting with {money(budget)}.</p>
+                <p className="muted small">Re-run week by week using only prices known at the time, trading the day after each decision, paying {(test.fee * 100).toFixed(2)}% fees plus 0.05% slippage on every trade. Starting with {money(budget)}.</p>
               </div>
               <div className={`verdict ${s.sharpe > b.sharpe ? 'good' : 'mixed'}`}><b>{verdictText}</b></div>
               <EquityChart lines={lines} />
