@@ -8,7 +8,7 @@ export default function Guide() {
           <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
-            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#read">Reading results</a>
+            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#picks">Picks</a><a href="#read">Reading results</a>
             <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
@@ -68,6 +68,7 @@ export default function Guide() {
           <li><b>Track record</b>: the forecast re-made on hundreds of past days, using only prices known at the time, and checked against what actually happened. "Reliable" means the range caught the price about as often as it should.</li>
           <li><b>Live log</b>: every 5 hours, forecasts are saved at the live price for BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT, LTC and <b>any coin you open on the Predict page</b> (it's added automatically, up to 50 extra), along with that moment's news buzz, headline tone and Fear &amp; Greed. Each one is graded automatically against the price at that exact hour once its time is up. Nobody can tune these after the fact.</li>
         </ul>
+        <p><b>Comparing several coins:</b> tick coins in the list (up to 6) to see their forecasts on one chart. Past moves are shown relative to today's price (0%), each with its heavy forecast line and dashed likely range. Tap a line or "Details" to see that coin's full prediction below.</p>
         <h3>News &amp; chatter</h3>
         <ul>
           <li><b>Headlines</b> from CoinDesk, Cointelegraph, Decrypt, Bitcoin Magazine, CryptoSlate and The Block (their official feeds), plus <b>Reddit</b> crypto communities when Reddit allows it. X/Twitter isn't included: its API is paid and scraping it breaks its rules.</li>
@@ -75,6 +76,16 @@ export default function Guide() {
           <li><b>Market mood</b> is the Crypto Fear &amp; Greed Index (alternative.me). Because it has history back to 2018, it's fed into the predictions, but only for coins where adding it improved past forecasts. The page tells you whether it was used.</li>
           <li>Tone and buzz have no history yet, so they're shown and saved daily but not used in the numbers. Once enough days are logged, they can be tested the same way.</li>
         </ul>
+
+        <h2 id="picks">Picks (recommendations)</h2>
+        <p>The <Link to="/picks">Picks</Link> page suggests which coins to hold right now and how much of each for your budget, using rules taken from published research rather than tuned to past data:</p>
+        <ul>
+          <li><b>Only the 20 most-traded coins.</b> Research finds the "bargains" in tiny coins are mostly untradeable (Fieberg, Liedtke &amp; Zaremba, 2024).</li>
+          <li><b>Trend checks:</b> is the price higher than 20, 40, 80 and 160 days ago, and above its average over each? A coin needs 6 of 8 to be a buy. Trend/momentum is the best-supported signal in crypto (Liu &amp; Tsyvinski, 2021; Zarattini, Pagani &amp; Barbon, 2025).</li>
+          <li><b>Size by wildness:</b> calmer coins get bigger shares, wild ones smaller, never more than 20% (Kaya &amp; Mostowfi, 2022). Whatever isn't needed stays in cash, so in a falling market most of the budget sits out.</li>
+          <li><b>Weekly review,</b> skipping tiny changes to save fees. No one-day signals, because one-day jumps in small coins tend to reverse (Zaremba et al., 2021).</li>
+        </ul>
+        <p>The page shows the suggested mix for your budget, what changed since last week, coins to watch or avoid, and a <b>track record</b>: following the picks week by week since 2019, with your exchange's fee, compared with just holding Bitcoin and with a top-10 basket. That history only includes coins that still trade today, so it flatters every strategy. Coins that collapsed and were delisted are missing ("survivorship bias"). These are rules-based suggestions for your own research, not personal financial advice.</p>
 
         <h2 id="read">Reading results</h2>
         <ul>
