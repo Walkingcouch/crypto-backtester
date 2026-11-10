@@ -77,6 +77,14 @@ export default async function handler(req, res) {
     })
     res.setHeader('content-type', 'application/json')
     res.setHeader('cache-control', 'public, s-maxage=21600, stale-while-revalidate=86400')
+    if (new URL(req.url, 'http://x').searchParams.get('summary') === '1') {
+      return res.status(200).send(JSON.stringify({
+        asOf: new Date(days[n]).toISOString().slice(0, 10), coinsChecked: coins.length, ms: Date.now() - t0, cash: now.cash,
+        picks: now.universe.map(a => `${a.base} ${a.verdict} ${(a.weight * 100).toFixed(1)}% ${a.checks}/${a.of} vol${(a.vol * 100).toFixed(0)}%`),
+        tests: tests.map(t => ({ fee: t.fee, from: new Date(t.start).toISOString().slice(0, 10),
+          picks: t.strategy.metrics, exposure: t.strategy.avgExposure, trades: t.strategy.trades, btc: t.btc.metrics, basket: t.basket.metrics })),
+      }))
+    }
     res.status(200).send(JSON.stringify({
       updated: new Date().toISOString(), asOf: days[n], settings: SETTINGS, coinsChecked: coins.length,
       now, prev: { day: prev.day, weights: Object.fromEntries(prev.universe.filter(a => a.weight > 0).map(a => [a.base, a.weight])) },

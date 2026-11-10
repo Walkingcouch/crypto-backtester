@@ -4,6 +4,7 @@ import FanChart, { OutcomeBars } from '../components/FanChart'
 import { Info } from '../components/Info'
 import Chatter, { type ChatterData } from '../components/Chatter'
 import CoinTable, { MarketNotes } from '../components/CoinTable'
+import CompareForecastChart, { type ForecastLine } from '../components/CompareForecastChart'
 import { useCoinMarket } from '../lib/useCoinMarket'
 import { fetchCandles } from '../lib/data'
 import { attachMood, forecastAt, HORIZONS, moodZones, prepare, trackRecord, type Forecast, type Prepared, type TrackRecord } from '../lib/forecast'
@@ -15,6 +16,8 @@ const COINS = [
   { sym: 'XRPUSDT', name: 'XRP' }, { sym: 'ADAUSDT', name: 'Cardano' }, { sym: 'DOGEUSDT', name: 'Dogecoin' },
 ]
 const DAY = 86_400_000
+const PALETTE = ['#0b7a5c', '#3b6fd8', '#d9822b', '#b5459b', '#2a9db5', '#c2412d']
+const MAX_COMPARE = 6
 const pct = (x: number, d = 0) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
 const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
@@ -46,10 +49,60 @@ export default function Predict() {
   const [track, setTrack] = useState<{ tracked?: string | false; saved?: unknown; error?: string } | null>(null)
   const [logBump, setLogBump] = useState(0)
 
-  const M = useCoinMarket({ keep: [symParam.replace(/USDT$/, '')], pageSize: 25 })
+  const focusBase = symParam.replace(/USDT$/, '')
+  const selected = useMemo(() => {
+    const list = (params.get('compare') || '').split(',').filter(Boolean)
+    return list.includes(focusBase) ? list : [focusBase, ...list].slice(0, MAX_COMPARE)
+  }, [params, focusBase])
+  const M = useCoinMarket({ keep: selected, pageSize: 25 })
   const [listOpen, setListOpen] = useState(true)
   const forecastRef = useRef<HTMLDivElement>(null)
+  const compareRef = useRef<HTMLDivElement>(null)
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }) }
+  const colorOf = (b: string) => PALETTE[Math.max(0, selected.indexOf(b)) % PALETTE.length]
+  /** Tick or untick a coin. Ticking also makes it the coin shown in detail below. */
+  function toggle(b: string) {
+    const p = new URLSearchParams(params)
+    let list = selected.slice()
+    if (list.includes(b)) {
+      if (list.length === 1) return
+      list = list.filter(x => x !== b)
+      if (b === focusBase) p.set('coin', list[0] + 'USDT')
+    } else {
+      if (list.length >= MAX_COMPARE) list = list.slice(0, MAX_COMPARE - 1)
+      list.push(b); p.set('coin', b + 'USDT')
+    }
+    p.set('compare', list.join(','))
+    setParams(p, { replace: true })
+  }
+  const focusOn = (b: string) => { set('coin', b + 'USDT'); window.setTimeout(() => forecastRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60) }
+
+  // forecasts for every ticked coin (for the comparison chart)
+  const [cmp, setCmp] = useState<Map<string, ForecastLine | { base: string; error: string }>>(new Map())
+  useEffect(() => {
+    if (selected.length < 2) return
+    let alive = true
+    for (const b of selected) {
+      const key = `${b}|${h}`
+      if (cmp.has(key)) continue
+      fetchCandles(b + 'USDT', '1d', '2017-01-01').then(bars => {
+        if (!alive) return
+        const P = prepare(bars.map(x => x.c))
+        const fc = bars.length >= 400 ? forecastAt(P, P.n - 1, h) : null
+        const last = bars[bars.length - 1]?.c
+        const from = Math.max(0, bars.length - Math.max(90, h * 2))
+        const line = fc ? {
+          base: b, color: '', t: bars.slice(from).map(x => x.t), pct: bars.slice(from).map(x => (x.c / last - 1) * 100),
+          target: (Number.isFinite(fc.analog.median) ? fc.analog.median : 0) * 100,
+          lo: (fc.levels.p10 / fc.price - 1) * 100, hi: (fc.levels.p90 / fc.price - 1) * 100,
+        } : { base: b, error: `${b} needs at least 400 days of history` }
+        setCmp(m => new Map(m).set(key, line))
+      }).catch(e => alive && setCmp(m => new Map(m).set(key, { base: b, error: String(e.message || e) })))
+    }
+    return () => { alive = false }
+  }, [selected, h]) // eslint-disable-line react-hooks/exhaustive-deps
+  const cmpLines = selected.map(b => cmp.get(`${b}|${h}`)).filter((l): l is ForecastLine => !!l && !('error' in l)).map(l => ({ ...l, color: colorOf(l.base) }))
+  const cmpErrors = selected.map(b => cmp.get(`${b}|${h}`)).filter((l): l is { base: string; error: string } => !!l && 'error' in l)
   const symbol = symParam
   const base = symbol.replace(/USDT$/, '')
   const coinName = COINS.find(c => c.sym === symbol)?.name ?? base
@@ -174,25 +227,54 @@ export default function Predict() {
       <section className="card">
         <div className="card-title">
           <div><h2 style={{ margin: 0 }}>Choose a coin</h2>
-            <div className="small muted">Rank and filter every coin, then tap one to see its prediction.</div></div>
+            <div className="small muted">Rank and filter every coin, then tick one or more to see their predictions.</div></div>
           <button className="btn btn-ghost btn-sm" onClick={() => setListOpen(o => !o)}>{listOpen ? 'Hide list' : `Show all coins${M.all.length ? ` (${M.all.length})` : ''}`}</button>
         </div>
         <div className="chips" style={{ marginBottom: 12 }}>
           {COINS.map(c => (
-            <button key={c.sym} className={`chip chip-sm ${symbol === c.sym ? 'on' : ''}`} onClick={() => { setOther(''); set('coin', c.sym) }}><b>{c.name}</b></button>
+            <button key={c.sym} className={`chip chip-sm ${selected.includes(c.sym.replace(/USDT$/, '')) ? 'on' : ''}`} onClick={() => { setOther(''); if (selected.includes(c.sym.replace(/USDT$/, ''))) focusOn(c.sym.replace(/USDT$/, '')); else toggle(c.sym.replace(/USDT$/, '')) }}><b>{c.name}</b></button>
           ))}
         </div>
         {listOpen && (
           <>
             <MarketNotes M={M} />
             <div style={{ height: 12 }} />
-            <CoinTable M={M} mode="pick" selected={[base]} onRow={b => {
-              setOther(''); set('coin', b + 'USDT'); setListOpen(false)
-              window.setTimeout(() => forecastRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80)
-            }} />
+            <CoinTable M={M} mode="compare" selected={selected} colorOf={colorOf} onRow={b => { setOther(''); toggle(b) }} />
+            <p className="hint" style={{ marginTop: 10 }}>Tap coins to tick them (up to {MAX_COMPARE}). Ticked coins are compared on one forecast chart, and the last one you tick is shown in detail below.</p>
           </>
         )}
       </section>
+
+      {selected.length >= 2 && (
+        <section className="card" ref={compareRef}>
+          <div className="card-title">
+            <div><h2 style={{ margin: 0 }}>Compare forecasts · {hLabel}</h2>
+              <div className="small muted">Past moves shown relative to today's price (0%). Heavy line = typical result in similar past moments; dashed = likely (80%) range.</div></div>
+          </div>
+          <div className="predict-controls" style={{ marginTop: 0, marginBottom: 8 }}>
+            <label className="mini"><span>Forecast for</span>
+              <select value={h} onChange={e => set('h', e.target.value)} className="horizon-select">
+                {HORIZONS.map(x => <option key={x.days} value={x.days}>{x.label}</option>)}
+              </select></label>
+          </div>
+          <div className="compare-legend">
+            {selected.map(b => {
+              const l = cmpLines.find(x => x.base === b)
+              return (
+                <span key={b} className={`cl-item ${b === focusBase ? 'cl-focus' : ''}`}>
+                  <i style={{ background: colorOf(b) }} /><b>{b}</b>
+                  {l ? <span className="small">{l.target >= 0 ? '+' : ''}{l.target.toFixed(1)}% <span className="muted">({l.lo.toFixed(0)}% to +{l.hi.toFixed(0)}%)</span></span> : <span className="muted small">…</span>}
+                  {b !== focusBase ? <button className="cl-link" onClick={() => focusOn(b)}>Details</button> : <span className="tag green">shown below</span>}
+                  <button aria-label={`Remove ${b}`} onClick={() => toggle(b)}>×</button>
+                </span>
+              )
+            })}
+          </div>
+          {cmpErrors.map(e => <div key={e.base} className="notice warn small">{e.error}</div>)}
+          {cmpLines.length ? <CompareForecastChart lines={cmpLines} h={h} focus={focusBase} onFocus={focusOn} /> : <div className="chart empty">Loading forecasts…</div>}
+          <p className="hint">Tap a line or "Details" to see that coin's full prediction, track record and news below.</p>
+        </section>
+      )}
 
       <section className="card predict-bar" ref={forecastRef}>
         <div className="predict-controls" style={{ marginTop: 0 }}>
@@ -335,6 +417,14 @@ export default function Predict() {
 
           <Chatter base={base} name={coinName} data={chatter} error={chatterErr} zones={zones} hLabel={hLabel} moodUsed={!!f.usedMood} />
 
+          {selected.length >= 2 && (
+            <div className="compare-bar">
+              <span className="small"><b>{selected.length}</b> ticked</span>
+              <span className="cb-dots">{selected.map(b => <i key={b} style={{ background: colorOf(b) }} title={b} />)}</span>
+              <span className="spacer" />
+              <button className="btn btn-primary btn-sm" onClick={() => compareRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Compare chart</button>
+            </div>
+          )}
           <p className="hint center">These are statistics about how {base} has moved before, not promises, and not financial advice.
             Want to know if a rule would have made money? <Link to={`/?coin=${symbol}`}>Backtest {base} →</Link></p>
         </>
