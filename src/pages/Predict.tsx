@@ -1,0 +1,310 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import FanChart, { OutcomeBars } from '../components/FanChart'
+import { Info } from '../components/Info'
+import Chatter, { type ChatterData } from '../components/Chatter'
+import { fetchCandles } from '../lib/data'
+import { attachMood, forecastAt, HORIZONS, moodZones, prepare, trackRecord, type Forecast, type Prepared, type TrackRecord } from '../lib/forecast'
+import { fmtMoney, fxSeries, nowRate, rateAt, useCurrency, type Cur, type FxSeries } from '../lib/currency'
+import { supabase } from '../lib/supabase'
+
+const COINS = [
+  { sym: 'BTCUSDT', name: 'Bitcoin' }, { sym: 'ETHUSDT', name: 'Ethereum' }, { sym: 'SOLUSDT', name: 'Solana' },
+  { sym: 'XRPUSDT', name: 'XRP' }, { sym: 'ADAUSDT', name: 'Cardano' }, { sym: 'DOGEUSDT', name: 'Dogecoin' },
+]
+const DAY = 86_400_000
+const pct = (x: number, d = 0) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
+const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
+const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+function fmtPrice(x: number, cur: Cur) {
+  if (!Number.isFinite(x)) return '–'
+  const digits = x >= 1000 ? 0 : x >= 10 ? 2 : x >= 1 ? 3 : 5
+  return fmtMoney(x, cur, digits)
+}
+
+interface Loaded { symbol: string; t: number[]; closes: number[]; P: Prepared; live: number }
+interface LogRow { as_of: string; symbol: string; horizon: number; price: number; p5: number; p10: number; p25: number; p75: number; p90: number; p95: number; p_up: number }
+
+export default function Predict() {
+  const [params, setParams] = useSearchParams()
+  const { cur, live: liveFx } = useCurrency()
+  const symParam = (params.get('coin') || 'BTCUSDT').toUpperCase().replace(/[^A-Z0-9]/g, '')
+  const h = HORIZONS.some(x => x.days === +(params.get('h') || 0)) ? +(params.get('h') as string) : 30
+  const [other, setOther] = useState(COINS.some(c => c.sym === symParam) ? '' : symParam)
+  const [data, setData] = useState<Loaded | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [record, setRecord] = useState<TrackRecord | null>(null)
+  const [recordMood, setRecordMood] = useState<TrackRecord | null>(null)
+  const [chatter, setChatter] = useState<ChatterData | null>(null)
+  const [chatterErr, setChatterErr] = useState<string | null>(null)
+  const [fx, setFx] = useState<FxSeries | null>(null)
+  const [log, setLog] = useState<{ rows: LogRow[]; error?: string } | null>(null)
+
+  const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }) }
+  const symbol = symParam
+  const base = symbol.replace(/USDT$/, '')
+  const coinName = COINS.find(c => c.sym === symbol)?.name ?? base
+  const hLabel = HORIZONS.find(x => x.days === h)!.label
+
+  // news, social, trending and Fear & Greed (server-side, cached)
+  useEffect(() => {
+    fetch('/api/chatter').then(r => { if (!r.ok) throw new Error(`News feed unavailable (${r.status}).`); return r.json() })
+      .then(setChatter).catch(e => setChatterErr(e.message))
+  }, [])
+
+  // load history + live price
+  useEffect(() => {
+    let alive = true
+    setError(null); setData(null); setRecord(null)
+    setBusy(`Loading ${coinName} history…`)
+    ;(async () => {
+      try {
+        const bars = await fetchCandles(symbol, '1d', '2017-01-01', n => alive && setBusy(`Loading ${coinName} history… ${n.toLocaleString()} days`))
+        if (bars.length < 400) throw new Error(`${base} has only ${bars.length} days of history. Forecasts need at least 400.`)
+        let live = bars[bars.length - 1].c
+        try {
+          const r = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`)
+          if (r.ok) { const j = await r.json(); if (+j.price > 0) live = +j.price }
+        } catch { /* use last close */ }
+        if (!alive) return
+        const closes = bars.map(b => b.c)
+        setData({ symbol, t: bars.map(b => b.t), closes, P: prepare(closes), live })
+      } catch (e) { if (alive) setError(e instanceof Error ? e.message : String(e)) }
+      finally { if (alive) setBusy(null) }
+    })()
+    return () => { alive = false }
+  }, [symbol]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // feed market mood (Fear & Greed history) into the data
+  const P = useMemo(() => {
+    if (!data) return null
+    const hist = chatter?.fng?.history
+    return hist?.length ? attachMood(prepare(data.closes), data.t, hist) : data.P
+  }, [data, chatter])
+  const hasMood = !!P?.mood && Number.isFinite(P.mood[P.n - 1])
+
+  // use mood only if it has actually improved this coin's past direction calls
+  const moodHelps = !!(record && recordMood && recordMood.n >= 100 && recordMood.brier < record.brier - 0.002)
+  const f: Forecast | null = useMemo(() => (P ? forecastAt(P, P.n - 1, h, { mood: moodHelps }) : null), [P, h, moodHelps])
+  const zones = useMemo(() => (P && hasMood ? moodZones(P, h) : []), [P, h, hasMood])
+
+  // walk-forward track record (heavier: run after paint)
+  useEffect(() => {
+    setRecord(null); setRecordMood(null)
+    if (!P) return
+    const id = window.setTimeout(() => {
+      const plain = trackRecord(P, h, 3)
+      setRecord(plain)
+      if (P.mood) window.setTimeout(() => setRecordMood(trackRecord(P, h, 3, 300, { mood: true })), 20)
+    }, 30)
+    return () => window.clearTimeout(id)
+  }, [P, h])
+
+  // AUD history for the chart
+  useEffect(() => {
+    if (cur !== 'AUD' || !data || fx) return
+    fxSeries(data.t[Math.max(0, data.t.length - 400)]).then(setFx).catch(() => setFx(null))
+  }, [cur, data, fx])
+
+  // daily live log from Supabase
+  useEffect(() => {
+    setLog(null)
+    if (!supabase) return
+    supabase.from('forecasts').select('*').eq('symbol', symbol).eq('horizon', h).order('as_of', { ascending: false }).limit(400)
+      .then(({ data: rows, error: err }) => setLog(err ? { rows: [], error: err.message } : { rows: (rows ?? []) as LogRow[] }))
+  }, [symbol, h])
+
+  const rate = nowRate(cur, liveFx)
+  const scale = f && data ? (data.live / f.price) * (rate ?? 1) : 1
+  const fmt = (x: number) => fmtPrice(x, rate == null ? 'USD' : cur)
+
+  const chart = useMemo(() => {
+    if (!data || !f) return null
+    const n = data.t.length, from = Math.max(0, n - Math.max(120, h * 3))
+    const t = data.t.slice(from), c = data.closes.slice(from)
+    const conv = c.map((p, i) => (cur === 'AUD' && fx ? p * rateAt(fx, t[i]) : p * (rate ?? 1)))
+    // make the last point the live price
+    t.push(Date.now()); conv.push(data.live * (rate ?? 1))
+    const L = f.levels, k = scale
+    return { t, prices: conv, levels: { p5: L.p5 * k, p10: L.p10 * k, p25: L.p25 * k, p50: L.p50 * k, p75: L.p75 * k, p90: L.p90 * k, p95: L.p95 * k } }
+  }, [data, f, h, cur, fx, rate, scale])
+
+  const graded = useMemo(() => {
+    if (!log || !data) return null
+    const byDay = new Map(data.t.map((ms, i) => [day(ms), data.closes[i]]))
+    const done: (LogRow & { outcome: number })[] = []
+    let pending = 0, nextDue: string | null = null
+    for (const r of log.rows) {
+      const due = day(Date.parse(r.as_of + 'T00:00:00Z') + h * DAY)
+      const y = byDay.get(due)
+      if (y != null) done.push({ ...r, outcome: y })
+      else { pending++; if (!nextDue || due < nextDue) nextDue = due }
+    }
+    const n = done.length
+    const in80 = done.filter(r => r.outcome >= r.p10 && r.outcome <= r.p90).length
+    const in50 = done.filter(r => r.outcome >= r.p25 && r.outcome <= r.p75).length
+    const dir = done.filter(r => (r.p_up >= 0.5) === (r.outcome > r.price)).length
+    const since = log.rows.length ? log.rows[log.rows.length - 1].as_of : null
+    return { n, in80, in50, dir, pending, nextDue, since, recent: done.slice(0, 8) }
+  }, [log, data, h])
+
+  const trendTxt = f ? (f.situation.trend === 1 ? 'Uptrend' : f.situation.trend === -1 ? 'Downtrend' : 'Mixed trend') : ''
+  const volTxt = f ? (f.situation.volPct < 0.25 ? 'calm' : f.situation.volPct > 0.75 ? 'wild' : 'normal') : ''
+
+  return (
+    <main className="page narrow">
+      <div className="page-head">
+        <h1>Predictions</h1>
+        <p>Where the price could be, based on how this coin has moved before. Every forecast is tested against what actually
+          happened, so you can see how much to trust it.</p>
+      </div>
+
+      <section className="card">
+        <div className="chips">
+          {COINS.map(c => (
+            <button key={c.sym} className={`chip chip-sm ${symbol === c.sym ? 'on' : ''}`} onClick={() => { setOther(''); set('coin', c.sym) }}><b>{c.name}</b></button>
+          ))}
+          <label className="chip chip-sm chip-input">
+            <input placeholder="Other, e.g. LINK" value={other} onChange={e => setOther(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              onKeyDown={e => { if (e.key === 'Enter' && other) set('coin', other.endsWith('USDT') ? other : other + 'USDT') }}
+              onBlur={() => { if (other) set('coin', other.endsWith('USDT') ? other : other + 'USDT') }} />
+          </label>
+        </div>
+        <div className="predict-controls">
+          <label className="mini"><span>Forecast for</span>
+            <select value={h} onChange={e => set('h', e.target.value)} className="horizon-select">
+              {HORIZONS.map(x => <option key={x.days} value={x.days}>{x.label}</option>)}
+            </select>
+          </label>
+          {data && <span className="small muted">Price now: <b style={{ color: 'var(--text)' }}>{fmt(data.live * (rate ?? 1))}</b></span>}
+        </div>
+        {busy && <><div className="progress"><div /></div><p className="hint">{busy}</p></>}
+        {error && <div className="notice err" style={{ marginTop: 12, marginBottom: 0 }}>{error}</div>}
+      </section>
+
+      {f && data && chart && (
+        <>
+          <section className="card">
+            <div className="step-head">
+              <span className="step-badge">{coinName} in {hLabel}</span>
+              <h2>Likely between {fmt(chart.levels.p10)} and {fmt(chart.levels.p90)}</h2>
+              <p className="muted small">That's the 80% range: past forecasts like this caught the real price about 8 times in 10{record ? ` (for ${base}, ${pct0(record.cover80)})` : ''}.</p>
+            </div>
+            <div className="range-grid">
+              <div className="stat"><div className="stat-label">Middle half (50%) <Info>Half the time the price ended up inside this narrower range.</Info></div>
+                <div className="stat-value small-v">{fmt(chart.levels.p25)} – {fmt(chart.levels.p75)}</div>
+                <div className="stat-sub">{pct(chart.levels.p25 / chart.levels.p50 - 1)} to {pct(chart.levels.p75 / chart.levels.p50 - 1)}</div></div>
+              <div className="stat"><div className="stat-label">Likely (80%)</div>
+                <div className="stat-value small-v">{fmt(chart.levels.p10)} – {fmt(chart.levels.p90)}</div>
+                <div className="stat-sub">{pct(chart.levels.p10 / chart.levels.p50 - 1)} to {pct(chart.levels.p90 / chart.levels.p50 - 1)}</div></div>
+              <div className="stat"><div className="stat-label">Wide (90%) <Info>Only 1 time in 10 did the price land outside this. Useful for deciding where a stop-loss would rarely be hit by normal noise.</Info></div>
+                <div className="stat-value small-v">{fmt(chart.levels.p5)} – {fmt(chart.levels.p95)}</div>
+                <div className="stat-sub">{pct(chart.levels.p5 / chart.levels.p50 - 1)} to {pct(chart.levels.p95 / chart.levels.p50 - 1)}</div></div>
+              <div className="stat"><div className="stat-label">Chance it's higher <Info>From similar past moments, blended with how often {base} rose over {hLabel} in general. Direction is close to a coin flip for any method; check the track record below before leaning on it.</Info></div>
+                <div className="stat-value">{pct0(f.pUp)}</div>
+                <div className="stat-sub">usually {pct0(f.baseUp)} over any {hLabel}</div></div>
+            </div>
+            <div className="situation">
+              <span className={`tag ${f.situation.trend === 1 ? 'green' : f.situation.trend === -1 ? 'red' : ''}`}>{trendTxt}</span>
+              <span className="tag">{pct(f.situation.r7)} in 7 days</span>
+              <span className="tag">{pct(f.situation.r30)} in 30 days</span>
+              <span className="tag">Volatility {volTxt} ({Math.round(f.situation.volPct * 100)}th percentile)</span>
+            </div>
+            <FanChart t={chart.t} prices={chart.prices} levels={chart.levels} h={h} fmt={fmt} />
+            <p className="hint">Shaded: 50%, 80% and 90% ranges. The range is centred on today's price, with no guess about direction.
+              {cur === 'AUD' && ' Converted at today\'s exchange rate.'}</p>
+          </section>
+
+          <section className="card">
+            <div className="step-head">
+              <span className="step-badge">What happened next</span>
+              <h2>{f.analog.n} past moments that looked like today</h2>
+              <p className="muted small">Days when {base} had a similar 7- and 30-day move (allowing for how wild it was) and the same trend{f.usedMood ? `, and similar market mood (Fear & Greed ${f.mood})` : ''}. Here's where it was {hLabel} later.</p>
+            </div>
+            <div className="range-grid">
+              <div className="stat"><div className="stat-label">Ended higher</div><div className="stat-value">{pct0(f.analog.up)}</div><div className="stat-sub">of {f.analog.n} cases</div></div>
+              <div className="stat"><div className="stat-label">Typical result</div><div className={`stat-value ${f.analog.median >= 0 ? 'pos' : 'neg'}`}>{pct(f.analog.median, 1)}</div><div className="stat-sub">the middle case</div></div>
+              <div className="stat"><div className="stat-label">Usual range</div><div className="stat-value small-v">{pct(f.analog.p10)} to {pct(f.analog.p90)}</div><div className="stat-sub">8 in 10 cases</div></div>
+              <div className="stat"><div className="stat-label">Worst / best</div><div className="stat-value small-v"><span className="neg">{pct(f.analog.worst)}</span> / <span className="pos">{pct(f.analog.best)}</span></div><div className="stat-sub">single cases</div></div>
+            </div>
+            <OutcomeBars outcomes={f.analog.outcomes} />
+            <p className="hint">Similar dates: {f.analog.idx.slice().sort((a, b) => b - a).slice(0, 10).map(i => new Date(data.t[i]).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })).join(' · ')}{f.analog.n > 10 ? ' …' : ''}</p>
+          </section>
+
+          <section className="card">
+            <div className="step-head">
+              <span className="step-badge">Track record</span>
+              <h2>How accurate has this been for {base}?</h2>
+              <p className="muted small">We re-made this forecast on past days, using only the prices known on each day, and checked what happened {hLabel} later.</p>
+            </div>
+            {!record ? <div className="empty small">Testing past forecasts…</div> : record.n === 0 ? <div className="empty small">Not enough history to test yet.</div> : (
+              <>
+                <table className="record">
+                  <thead><tr><th>Forecast</th><th>Aim</th><th>Actual</th><th></th></tr></thead>
+                  <tbody>
+                    {([['Middle half (50%)', 0.5, record.cover50], ['Likely range (80%)', 0.8, record.cover80], ['Wide range (90%)', 0.9, record.cover90]] as const).map(([name, aim, got]) => {
+                      const off = got - aim
+                      return <tr key={name}><td>{name}</td><td>{pct0(aim)}</td><td><b>{pct0(got)}</b></td>
+                        <td>{Math.abs(off) <= 0.05 ? <span className="tag green">Reliable</span> : off < 0 ? <span className="tag amber">Too narrow</span> : <span className="tag">A bit cautious</span>}</td></tr>
+                    })}
+                    <tr><td>Higher or lower call <Info>Right if it said 50%+ and the price rose, or under 50% and it fell. "Always guess the usual" means always guessing whichever direction happened most often.</Info></td>
+                      <td>{pct0(Math.max(record.upRate, 1 - record.upRate))} <span className="muted small">by always guessing the usual</span></td>
+                      <td><b>{pct0(record.hitRate)}</b></td>
+                      <td>{record.brier < record.brierBase - 0.003 ? <span className="tag green">Some edge</span> : <span className="tag amber">No real edge</span>}</td></tr>
+                  </tbody>
+                </table>
+                {hasMood && (
+                  <div className={`notice ${moodHelps ? 'ok' : 'info'} small`} style={{ marginTop: 12 }}>
+                    <b>Market mood (Fear &amp; Greed):</b>{' '}
+                    {!recordMood ? 'testing whether it helps…'
+                      : moodHelps ? `adding it improved ${base}'s past direction calls (right ${pct0(recordMood.hitRate)} vs ${pct0(record.hitRate)} without), so it's used in "Chance it's higher" and "What happened next".`
+                      : `adding it didn't improve ${base}'s past direction calls (right ${pct0(recordMood.hitRate)} with it, ${pct0(record.hitRate)} without), so it isn't used in the numbers. It's still shown below.`}
+                  </div>
+                )}
+                <p className="hint">{record.n.toLocaleString()} past forecasts, {day(data.t[record.first])} to {day(data.t[record.last])}, one every {record.step} days. Neighbouring forecasts overlap, so treat small differences as noise.</p>
+              </>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="step-head">
+              <span className="step-badge">Live log</span>
+              <h2>Forecasts saved each day, graded when the date arrives</h2>
+              <p className="muted small">A record that can't be tuned after the fact. Each day a forecast is saved for the main coins, and checked once its {hLabel} are up.</p>
+            </div>
+            {!supabase ? <p className="muted small">Database not connected.</p>
+              : !log ? <div className="empty small">Loading…</div>
+              : log.error ? <div className="notice info small">The live log isn't switched on yet. It needs a one-time database step, as described in the Guide.</div>
+              : log.rows.length === 0 ? <div className="notice info small">No saved forecasts for {base} yet. The daily job covers BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC, and the first entries appear tomorrow.</div>
+              : graded && (
+                <>
+                  <div className="range-grid">
+                    <div className="stat"><div className="stat-label">Graded so far</div><div className="stat-value">{graded.n}</div><div className="stat-sub">{graded.pending} waiting{graded.nextDue ? ` · next ${graded.nextDue}` : ''}</div></div>
+                    <div className="stat"><div className="stat-label">Inside 80% range</div><div className="stat-value">{graded.n ? pct0(graded.in80 / graded.n) : '–'}</div><div className="stat-sub">aim 80%</div></div>
+                    <div className="stat"><div className="stat-label">Inside 50% range</div><div className="stat-value">{graded.n ? pct0(graded.in50 / graded.n) : '–'}</div><div className="stat-sub">aim 50%</div></div>
+                    <div className="stat"><div className="stat-label">Direction right</div><div className="stat-value">{graded.n ? pct0(graded.dir / graded.n) : '–'}</div><div className="stat-sub">coin flip 50%</div></div>
+                  </div>
+                  {graded.recent.length > 0 && (
+                    <div className="table-wrap"><table>
+                      <thead><tr><th>Made on</th><th>Price then</th><th>80% range</th><th>Actual</th><th></th></tr></thead>
+                      <tbody>{graded.recent.map(r => (
+                        <tr key={r.as_of}><td>{r.as_of}</td><td>{fmtPrice(r.price, 'USD')}</td><td>{fmtPrice(r.p10, 'USD')} – {fmtPrice(r.p90, 'USD')}</td><td>{fmtPrice(r.outcome, 'USD')}</td>
+                          <td>{r.outcome >= r.p10 && r.outcome <= r.p90 ? <span className="tag green">Inside</span> : <span className="tag red">Outside</span>}</td></tr>
+                      ))}</tbody>
+                    </table></div>
+                  )}
+                  <p className="hint">Logging since {graded.since}. Log prices are in USD, as recorded.</p>
+                </>
+              )}
+          </section>
+
+          <Chatter base={base} name={coinName} data={chatter} error={chatterErr} zones={zones} hLabel={hLabel} moodUsed={!!f.usedMood} />
+
+          <p className="hint center">These are statistics about how {base} has moved before, not promises, and not financial advice.
+            Want to know if a rule would have made money? <Link to={`/?coin=${symbol}`}>Backtest {base} →</Link></p>
+        </>
+      )}
+    </main>
+  )
+}

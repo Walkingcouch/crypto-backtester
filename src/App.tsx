@@ -3,6 +3,7 @@ import Backtest from './pages/Backtest'
 import Guide from './pages/Guide'
 import History from './pages/History'
 import Markets from './pages/Markets'
+import Predict from './pages/Predict'
 import Account from './pages/Account'
 import { useAuth } from './lib/auth'
 import { cloudEnabled } from './lib/supabase'
@@ -24,6 +25,7 @@ export default function App() {
           <nav className="nav">
             <NavLink to="/" end>Test</NavLink>
             <NavLink to="/markets">Markets</NavLink>
+            <NavLink to="/predict">Predict</NavLink>
             <NavLink to="/history">History</NavLink>
             <NavLink to="/guide">Guide</NavLink>
           </nav>
@@ -44,6 +46,7 @@ export default function App() {
         <Route path="/guide" element={<Guide />} />
         <Route path="/history" element={<History />} />
         <Route path="/markets" element={<Markets />} />
+        <Route path="/predict" element={<Predict />} />
         <Route path="/runs" element={<Navigate to="/history" replace />} />
         <Route path="/ledger" element={<Navigate to="/history?tab=checks" replace />} />
         <Route path="/account" element={<Account />} />

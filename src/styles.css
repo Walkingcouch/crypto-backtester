@@ -357,3 +357,21 @@ tr.hl td { background: var(--accent-soft); }
 .wtb-row em.mine { color: var(--accent); font-weight: 600; }
 .wtb-close { display: none; }
 @media (max-width: 720px) { .wtb-pop { z-index: 60; bottom: 96px; } .wtb-close { display: block; width: 100%; margin-top: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 9px; padding: 9px; font: 600 14px Inter, sans-serif; } }
+
+/* ---------- predictions ---------- */
+.predict-controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; margin-top: 14px; }
+.horizon-select { min-width: 200px; font-weight: 600; font-size: 16px; padding: 10px 12px; }
+.range-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+@media (max-width: 720px) { .range-grid { grid-template-columns: 1fr 1fr; } }
+.stat-value.small-v { font-size: 16.5px; }
+.situation { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+table.record td:first-child { white-space: normal; }
+.feed { display: grid; gap: 2px; }
+.feed-item { display: flex; gap: 10px; align-items: flex-start; padding: 9px 8px; border-radius: 9px; color: var(--text); }
+.feed-item:hover { background: var(--surface-2); text-decoration: none; }
+.feed-body { display: grid; gap: 2px; min-width: 0; }
+.feed-title { font-weight: 500; line-height: 1.35; }
+.feed-meta { font-size: 12.5px; color: var(--faint); }
+.dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--faint); }
+.dot.green { background: var(--accent); } .dot.red { background: var(--neg); }
+.row-links { display: flex; gap: 10px; justify-content: flex-end; }

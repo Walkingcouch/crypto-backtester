@@ -199,6 +199,7 @@ export default function Markets() {
                   <i style={{ background: colorOf(b) }} /><b>{b}</b>
                   <span className={cls(c ? retIn(c, period) : null)}>{pctTxt(c ? retIn(c, period) : null)}</span>
                   <WhereToBuy base={b} where={where(b)} known={listings?.ok ?? null} partial={listings?.partial} compact />
+                  <Link to={`/predict?coin=${b}USDT`} className="small">Predict</Link>
                   <Link to={`/?coin=${b}USDT`} className="small">Test</Link>
                   <button aria-label={`Remove ${b}`} onClick={() => toggle(b)}>×</button>
                 </span>
@@ -265,7 +266,7 @@ export default function Markets() {
                   <span className="r hide-sm">{c.trend ? <TrendTag t={c.trend} /> : <span className="muted">{c.historyDays ? '—' : '…'}</span>}</span>
                   <span className="r hide-sm">{c.vol30 != null ? `${(c.vol30 * 100).toFixed(0)}%` : '—'}</span>
                   <span className="r hide-sm">{fmtVol(c.quoteVolume * (rate ?? 1), sym)}</span>
-                  <span className="hide-sm r"><Link to={`/?coin=${c.symbol}`} onClick={e => e.stopPropagation()} className="small">Backtest →</Link></span>
+                  <span className="hide-sm r row-links"><Link to={`/predict?coin=${c.symbol}`} onClick={e => e.stopPropagation()} className="small">Predict</Link><Link to={`/?coin=${c.symbol}`} onClick={e => e.stopPropagation()} className="small">Test</Link></span>
                 </div>
               )
             })}
