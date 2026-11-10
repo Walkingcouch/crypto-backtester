@@ -41,6 +41,8 @@ export default function Predict() {
   const [chatterErr, setChatterErr] = useState<string | null>(null)
   const [fx, setFx] = useState<FxSeries | null>(null)
   const [log, setLog] = useState<{ rows: LogRow[]; error?: string } | null>(null)
+  const [track, setTrack] = useState<{ tracked?: string | false; saved?: unknown; error?: string } | null>(null)
+  const [logBump, setLogBump] = useState(0)
 
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }) }
   const symbol = symParam
@@ -71,6 +73,11 @@ export default function Predict() {
         if (!alive) return
         const closes = bars.map(b => b.c)
         setData({ symbol, t: bars.map(b => b.t), closes, P: prepare(closes), live })
+        // add this coin to the 5-hourly log and save a forecast for it now
+        setTrack(null)
+        fetch(`/api/track?coin=${symbol}&name=${encodeURIComponent(coinName)}`)
+          .then(r => r.json()).then(j => { if (alive) { setTrack(j); setLogBump(b => b + 1) } })
+          .catch(() => alive && setTrack({ error: 'Could not reach the log right now.' }))
       } catch (e) { if (alive) setError(e instanceof Error ? e.message : String(e)) }
       finally { if (alive) setBusy(null) }
     })()
@@ -114,7 +121,7 @@ export default function Predict() {
     if (!supabase) return
     supabase.from('forecasts').select('*').eq('symbol', symbol).eq('horizon', h).order('made_at', { ascending: false }).limit(2000)
       .then(({ data: rows, error: err }) => setLog(err ? { rows: [], error: err.message } : { rows: (rows ?? []) as LogRow[] }))
-  }, [symbol, h])
+  }, [symbol, h, logBump])
 
   const rate = nowRate(cur, liveFx)
   const scale = f && data ? (data.live / f.price) * (rate ?? 1) : 1
@@ -271,12 +278,20 @@ export default function Predict() {
             <div className="step-head">
               <span className="step-badge">Live log</span>
               <h2>Forecasts saved every 5 hours, graded when the time arrives</h2>
-              <p className="muted small">A record that can't be tuned after the fact. Every 5 hours a forecast is saved for the main coins at the live price, and checked against the price at that exact hour once its {hLabel} are up.</p>
+              {track && (
+                <div className={`notice ${track.error ? 'warn' : 'ok'} small`}>
+                  {track.error ? `Couldn't add ${base} to the log: ${track.error}`
+                    : track.tracked === 'added' ? `✓ ${base} added. A forecast was saved now, and it'll be saved every 5 hours from here on.`
+                    : track.tracked === 'full' ? `The log is full (50 extra coins). ${base} wasn't added.`
+                    : `✓ ${base} is in the log, saved every 5 hours.`}
+                </div>
+              )}
+              <p className="muted small">A record that can't be tuned after the fact. Every 5 hours a forecast is saved at the live price for the main coins and every coin you've opened here, and checked against the price at that exact hour once its {hLabel} are up.</p>
             </div>
             {!supabase ? <p className="muted small">Database not connected.</p>
               : !log ? <div className="empty small">Loading…</div>
               : log.error ? <div className="notice info small">The live log isn't switched on yet. It needs a one-time database step, as described in the Guide.</div>
-              : log.rows.length === 0 ? <div className="notice info small">No saved forecasts for {base} yet. The log covers BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC, and saves new forecasts every 5 hours.</div>
+              : log.rows.length === 0 ? <div className="notice info small">No saved forecasts for {base} yet. Opening a coin here adds it to the log automatically.</div>
               : graded && (
                 <>
                   <div className="range-grid">

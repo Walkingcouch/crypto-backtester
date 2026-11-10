@@ -1,26 +1,9 @@
-// Runs every 5 hours (Supabase pg_cron calls it, see supabase/migrations/0003): saves forecasts for the main coins to
-// Supabase so they can be graded when their date arrives. Also logs news buzz, headline
-// tone and Fear & Greed per coin, so chatter can later be tested as a predictor.
-//   GET /api/forecast-cron?dry=1  -> computes and returns the rows without saving (for checking)
-import { attachMood, forecastAt, HORIZONS, prepare } from '../src/lib/forecast.js'
-import { collect, mentions } from './_lib/chatter.js'
-
-const COINS = [['BTC', 'Bitcoin'], ['ETH', 'Ethereum'], ['SOL', 'Solana'], ['XRP', 'XRP'], ['ADA', 'Cardano'],
-  ['DOGE', 'Dogecoin'], ['LINK', 'Chainlink'], ['AVAX', 'Avalanche'], ['DOT', 'Polkadot'], ['LTC', 'Litecoin']]
-const SUPABASE_URL = process.env.SUPABASE_URL || 'https://qjwvgqbicynngklppcjy.supabase.co'
-const SUPABASE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_Oe-8FkDpfZvG294EIFE72A_iSsFOCjx'
-const DAY = 86_400_000
-const HOUR = 3_600_000
-const sb = (path, init = {}) => fetch(`${SUPABASE_URL}${path}`, {
-  ...init, headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${SUPABASE_KEY}`, 'content-type': 'application/json', ...(init.headers || {}) },
-})
-async function livePrice(symbol) {
-  const r = await fetch(`https://data-api.binance.vision/api/v3/ticker/price?symbol=${symbol}`)
-  if (!r.ok) throw new Error(`price ${symbol} ${r.status}`)
-  const p = +(await r.json()).price
-  if (!(p > 0)) throw new Error(`bad price ${symbol}`)
-  return p
-}
+// Runs every 5 hours (Supabase pg_cron calls it, see supabase/migrations/0003): saves forecasts
+// for the default coins plus every coin someone has opened on the Predict page, and grades
+// forecasts whose time has come.
+//   GET /api/forecast-cron?dry=1  -> computes the rows without saving (for checking)
+import { collect } from './_lib/chatter.js'
+import { HOUR, rowsFor, rpc, sb, trackedCoins } from './_lib/forecaster.js'
 
 /** Grade forecasts whose target time has passed, using the price at that exact hour. */
 async function gradeDue() {
@@ -33,9 +16,8 @@ async function gradeDue() {
   const graded = []
   for (const [symbol, list] of bySym) {
     const times = list.map(d => Date.parse(d.target_at))
-    const start = Math.floor(Math.min(...times) / HOUR) * HOUR
     const opens = new Map()
-    for (let from = start, page = 0; from <= Math.max(...times) && page < 10; page++) {
+    for (let from = Math.floor(Math.min(...times) / HOUR) * HOUR, page = 0; from <= Math.max(...times) && page < 10; page++) {
       const k = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=1h&startTime=${from}&limit=1000`)
       if (!k.ok) break
       const rows = await k.json()
@@ -48,24 +30,7 @@ async function gradeDue() {
       if (p > 0) graded.push({ symbol, horizon: d.horizon, made_at: d.made_at, outcome: p })
     }
   }
-  if (!graded.length) return 0
-  const g = await sb('/rest/v1/rpc/grade_forecasts', { method: 'POST', body: JSON.stringify({ secret: process.env.FORECAST_SECRET || '', rows: graded }) })
-  return g.ok ? await g.json() : `grade error ${g.status}: ${(await g.text()).slice(0, 160)}`
-}
-
-async function dailyBars(symbol) {
-  const out = []
-  let start = Date.parse('2019-01-01T00:00:00Z')
-  for (let page = 0; page < 6; page++) {
-    const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=1d&startTime=${start}&limit=1000`)
-    if (!r.ok) throw new Error(`Binance ${symbol} ${r.status}`)
-    const rows = await r.json()
-    if (!rows.length) break
-    for (const k of rows) out.push([+k[0], +k[4]])
-    start = +rows[rows.length - 1][0] + DAY
-    if (rows.length < 1000) break
-  }
-  return out.filter(([t]) => t + DAY <= Date.now()) // completed days only
+  return graded.length ? rpc('grade_forecasts', { rows: graded }) : 0
 }
 
 export default async function handler(req, res) {
@@ -78,46 +43,21 @@ export default async function handler(req, res) {
   const started = Date.now()
   let chatter = null
   try { chatter = await collect() } catch { /* forecasts still go ahead */ }
-  const fngHist = chatter?.fng?.history || []
-  const nowMs = Date.now()
-  const madeAt = Math.floor(nowMs / HOUR) * HOUR   // one snapshot per hour, so re-runs don't duplicate
+  const madeAt = Math.floor(Date.now() / HOUR) * HOUR   // one snapshot per hour, so re-runs don't duplicate
+  const coins = await trackedCoins()
 
   const rows = [], errors = []
-  for (const [base, name] of COINS) {
-    try {
-      const bars = await dailyBars(base + 'USDT')
-      if (bars.length < 400) throw new Error('not enough history')
-      const t = bars.map(b => b[0]), closes = bars.map(b => b[1])
-      const P = prepare(closes)
-      if (fngHist.length) attachMood(P, t, fngHist)
-      const news = (chatter?.news || []).filter(i => mentions(`${i.title} ${i.summary}`, base, name))
-      const recent = news.filter(i => i.time && nowMs - i.time < DAY)
-      const live = await livePrice(base + 'USDT')
-      const tone = news.length ? news.slice(0, 30).reduce((s, i) => s + i.tone, 0) / Math.min(30, news.length) : null
-      for (const { days } of HORIZONS) {
-        const f = forecastAt(P, P.n - 1, days)
-        if (!f) continue
-        const fm = P.mood ? forecastAt(P, P.n - 1, days, { mood: true }) : null
-        const L = f.levels, k = live / f.price      // centre today's ranges on the live price
-        rows.push({
-          as_of: new Date(t[P.n - 1]).toISOString().slice(0, 10), symbol: base + 'USDT', horizon: days, price: live,
-          made_at: new Date(madeAt).toISOString(), target_at: new Date(madeAt + days * DAY).toISOString(),
-          p5: L.p5 * k, p10: L.p10 * k, p25: L.p25 * k, p75: L.p75 * k, p90: L.p90 * k, p95: L.p95 * k, p_up: f.pUp,
-          p_up_mood: fm?.usedMood ? fm.pUp : null, fng: fm?.mood ?? null,
-          news_24h: recent.length, news_tone: tone,
-        })
-      }
-    } catch (e) { errors.push(`${base}: ${e.message || e}`) }
+  for (let i = 0; i < coins.length; i += 4) {            // a few coins at a time
+    const batch = await Promise.all(coins.slice(i, i + 4).map(([base, name]) =>
+      rowsFor(base, name, chatter, madeAt).catch(e => { errors.push(`${base}: ${e.message || e}`); return [] })))
+    rows.push(...batch.flat())
   }
 
   let saved = null, graded = null
-  if (!dry && rows.length) {
-    const r = await sb('/rest/v1/rpc/log_forecasts', { method: 'POST', body: JSON.stringify({ secret: process.env.FORECAST_SECRET || '', rows }) })
-    saved = r.ok ? await r.json() : `error ${r.status}: ${(await r.text()).slice(0, 200)}`
-  }
+  if (!dry && rows.length) saved = await rpc('log_forecasts', { rows })
   if (!dry) { try { graded = await gradeDue() } catch (e) { graded = `grade failed: ${e.message || e}` } }
   res.status(errors.length && !rows.length ? 500 : 200).json({
-    dry, saved, graded, madeAt: new Date(madeAt).toISOString(), rows: dry ? rows : rows.length, errors, ms: Date.now() - started,
+    dry, saved, graded, madeAt: new Date(madeAt).toISOString(), coins: coins.map(c => c[0]), rows: dry ? rows : rows.length, errors, ms: Date.now() - started,
     chatter: chatter ? Object.fromEntries(Object.entries(chatter.sources).map(([k, v]) => [k, v.ok])) : null,
   })
 }
