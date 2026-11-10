@@ -30,7 +30,8 @@ export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x')
   const dry = url.searchParams.get('dry') === '1'
   const secret = process.env.CRON_SECRET
-  if (!dry && secret && req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: 'unauthorized' })
+  const authed = req.headers.authorization === `Bearer ${secret}` || url.searchParams.get('key') === secret
+  if (!dry && secret && !authed) return res.status(401).json({ error: 'unauthorized' })
 
   const started = Date.now()
   let chatter = null

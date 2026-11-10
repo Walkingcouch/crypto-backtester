@@ -8,7 +8,7 @@ export default function Guide() {
           <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
-            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#read">Reading results</a>
+            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#read">Reading results</a>
             <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
@@ -58,6 +58,23 @@ export default function Guide() {
         </ul>
         <p>Stablecoins and leveraged tokens are left out. Coins listed recently show "new" for periods longer than their history.
           A coin topping the list recently says nothing reliable about the next month. Use the Test page to check whether a rule would have worked.</p>
+
+        <h2 id="predict">Predictions</h2>
+        <p>The <Link to="/predict">Predict</Link> page estimates where a coin's price could be in <b>7 days, 14 days, 1 month or 3 months</b> (pick from the dropdown). It never claims to know the direction. It tells you how wide the realistic range is, and shows its own track record so you can judge how far to trust it.</p>
+        <ul>
+          <li><b>Likely range (80%)</b>: the price ended inside this range about 8 times in 10 when we tested the same method on past days. The 50% and 90% ranges work the same way. They're based on how wild the coin is right now, blended with its long-term behaviour, and they're centred on today's price.</li>
+          <li><b>Chance it's higher</b>: from similar past moments, blended with how often the coin rose over that period in general. For every coin we've tested, direction is close to a coin flip, and the page says so.</li>
+          <li><b>What happened next</b>: up to 40 past days when the coin looked like today (similar 7- and 30-day move allowing for volatility, same trend), and where it was afterwards: how often higher, typical result, worst and best.</li>
+          <li><b>Track record</b>: the forecast re-made on hundreds of past days, using only prices known at the time, and checked against what actually happened. "Reliable" means the range caught the price about as often as it should.</li>
+          <li><b>Live log</b>: each day at about 10:50am Darwin time, forecasts for BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC are saved, then graded automatically when their date arrives. Nobody can tune these after the fact.</li>
+        </ul>
+        <h3>News &amp; chatter</h3>
+        <ul>
+          <li><b>Headlines</b> from CoinDesk, Cointelegraph, Decrypt, Bitcoin Magazine, CryptoSlate and The Block (their official feeds), plus <b>Reddit</b> crypto communities when Reddit allows it. X/Twitter isn't included: its API is paid and scraping it breaks its rules.</li>
+          <li><b>Headline tone</b> is a simple, transparent count of positive words (surge, rally, approval…) against negative ones (crash, hack, lawsuit…). <b>Buzz</b> compares today's mentions with the usual daily rate.</li>
+          <li><b>Market mood</b> is the Crypto Fear &amp; Greed Index (alternative.me). Because it has history back to 2018, it's fed into the predictions, but only for coins where adding it improved past forecasts. The page tells you whether it was used.</li>
+          <li>Tone and buzz have no history yet, so they're shown and saved daily but not used in the numbers. Once enough days are logged, they can be tested the same way.</li>
+        </ul>
 
         <h2 id="read">Reading results</h2>
         <ul>

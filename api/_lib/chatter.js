@@ -69,7 +69,10 @@ export async function collect() {
   }))
   out.news = news.flat().map(i => ({ ...i, tone: tone(`${i.title} ${i.summary}`) }))
 
-  const social = await Promise.all(SUBREDDITS.map(async sub => {
+  // Reddit rate-limits bursts, so ask one community at a time with a short pause
+  const social = []
+  for (const sub of SUBREDDITS) { social.push(await redditSub(sub)); await new Promise(r => setTimeout(r, 400)) }
+  async function redditSub(sub) {
     try {
       const j = await get(`https://www.reddit.com/r/${sub}/hot.json?limit=40&raw_json=1`, { json: true })
       const items = (j?.data?.children || []).map(c => c.data).filter(d => d && !d.stickied).map(d => ({
@@ -85,7 +88,7 @@ export async function collect() {
         return items
       } catch (e2) { out.sources[`r/${sub}`] = { ok: false, error: String(e2.message || e2) }; return [] }
     }
-  }))
+  }
   out.social = social.flat().map(i => ({ ...i, tone: tone(`${i.title} ${i.summary}`) }))
 
   try {
