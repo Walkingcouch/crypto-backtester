@@ -11,6 +11,9 @@
     },
     "api/chatter.js": {
       "maxDuration": 30
+    },
+    "api/picks.js": {
+      "maxDuration": 60
     }
   }
 }
