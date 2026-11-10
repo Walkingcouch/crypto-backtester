@@ -5,12 +5,6 @@
       "destination": "/index.html"
     }
   ],
-  "crons": [
-    {
-      "path": "/api/forecast-cron",
-      "schedule": "20 0 * * *"
-    }
-  ],
   "functions": {
     "api/forecast-cron.js": {
       "maxDuration": 120

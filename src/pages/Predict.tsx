@@ -16,6 +16,7 @@ const DAY = 86_400_000
 const pct = (x: number, d = 0) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
 const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10)
+const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 function fmtPrice(x: number, cur: Cur) {
   if (!Number.isFinite(x)) return '–'
   const digits = x >= 1000 ? 0 : x >= 10 ? 2 : x >= 1 ? 3 : 5
@@ -23,7 +24,7 @@ function fmtPrice(x: number, cur: Cur) {
 }
 
 interface Loaded { symbol: string; t: number[]; closes: number[]; P: Prepared; live: number }
-interface LogRow { as_of: string; symbol: string; horizon: number; price: number; p5: number; p10: number; p25: number; p75: number; p90: number; p95: number; p_up: number }
+interface LogRow { as_of: string; made_at: string; target_at: string | null; outcome: number | null; symbol: string; horizon: number; price: number; p5: number; p10: number; p25: number; p75: number; p90: number; p95: number; p_up: number }
 
 export default function Predict() {
   const [params, setParams] = useSearchParams()
@@ -111,7 +112,7 @@ export default function Predict() {
   useEffect(() => {
     setLog(null)
     if (!supabase) return
-    supabase.from('forecasts').select('*').eq('symbol', symbol).eq('horizon', h).order('as_of', { ascending: false }).limit(400)
+    supabase.from('forecasts').select('*').eq('symbol', symbol).eq('horizon', h).order('made_at', { ascending: false }).limit(2000)
       .then(({ data: rows, error: err }) => setLog(err ? { rows: [], error: err.message } : { rows: (rows ?? []) as LogRow[] }))
   }, [symbol, h])
 
@@ -132,20 +133,18 @@ export default function Predict() {
 
   const graded = useMemo(() => {
     if (!log || !data) return null
-    const byDay = new Map(data.t.map((ms, i) => [day(ms), data.closes[i]]))
     const done: (LogRow & { outcome: number })[] = []
-    let pending = 0, nextDue: string | null = null
+    let pending = 0, nextDue: number | null = null
     for (const r of log.rows) {
-      const due = day(Date.parse(r.as_of + 'T00:00:00Z') + h * DAY)
-      const y = byDay.get(due)
-      if (y != null) done.push({ ...r, outcome: y })
-      else { pending++; if (!nextDue || due < nextDue) nextDue = due }
+      if (r.outcome != null) { done.push(r as LogRow & { outcome: number }); continue }
+      const due = r.target_at ? Date.parse(r.target_at) : Date.parse(r.made_at) + h * DAY
+      pending++; if (nextDue == null || due < nextDue) nextDue = due
     }
     const n = done.length
     const in80 = done.filter(r => r.outcome >= r.p10 && r.outcome <= r.p90).length
     const in50 = done.filter(r => r.outcome >= r.p25 && r.outcome <= r.p75).length
     const dir = done.filter(r => (r.p_up >= 0.5) === (r.outcome > r.price)).length
-    const since = log.rows.length ? log.rows[log.rows.length - 1].as_of : null
+    const since = log.rows.length ? log.rows[log.rows.length - 1].made_at : null
     return { n, in80, in50, dir, pending, nextDue, since, recent: done.slice(0, 8) }
   }, [log, data, h])
 
@@ -271,17 +270,17 @@ export default function Predict() {
           <section className="card">
             <div className="step-head">
               <span className="step-badge">Live log</span>
-              <h2>Forecasts saved each day, graded when the date arrives</h2>
-              <p className="muted small">A record that can't be tuned after the fact. Each day a forecast is saved for the main coins, and checked once its {hLabel} are up.</p>
+              <h2>Forecasts saved every 5 hours, graded when the time arrives</h2>
+              <p className="muted small">A record that can't be tuned after the fact. Every 5 hours a forecast is saved for the main coins at the live price, and checked against the price at that exact hour once its {hLabel} are up.</p>
             </div>
             {!supabase ? <p className="muted small">Database not connected.</p>
               : !log ? <div className="empty small">Loading…</div>
               : log.error ? <div className="notice info small">The live log isn't switched on yet. It needs a one-time database step, as described in the Guide.</div>
-              : log.rows.length === 0 ? <div className="notice info small">No saved forecasts for {base} yet. The daily job covers BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC, and the first entries appear tomorrow.</div>
+              : log.rows.length === 0 ? <div className="notice info small">No saved forecasts for {base} yet. The log covers BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC, and saves new forecasts every 5 hours.</div>
               : graded && (
                 <>
                   <div className="range-grid">
-                    <div className="stat"><div className="stat-label">Graded so far</div><div className="stat-value">{graded.n}</div><div className="stat-sub">{graded.pending} waiting{graded.nextDue ? ` · next ${graded.nextDue}` : ''}</div></div>
+                    <div className="stat"><div className="stat-label">Graded so far</div><div className="stat-value">{graded.n}</div><div className="stat-sub">{graded.pending} waiting{graded.nextDue ? ` · next ${when(graded.nextDue)}` : ''}</div></div>
                     <div className="stat"><div className="stat-label">Inside 80% range</div><div className="stat-value">{graded.n ? pct0(graded.in80 / graded.n) : '–'}</div><div className="stat-sub">aim 80%</div></div>
                     <div className="stat"><div className="stat-label">Inside 50% range</div><div className="stat-value">{graded.n ? pct0(graded.in50 / graded.n) : '–'}</div><div className="stat-sub">aim 50%</div></div>
                     <div className="stat"><div className="stat-label">Direction right</div><div className="stat-value">{graded.n ? pct0(graded.dir / graded.n) : '–'}</div><div className="stat-sub">coin flip 50%</div></div>
@@ -290,12 +289,12 @@ export default function Predict() {
                     <div className="table-wrap"><table>
                       <thead><tr><th>Made on</th><th>Price then</th><th>80% range</th><th>Actual</th><th></th></tr></thead>
                       <tbody>{graded.recent.map(r => (
-                        <tr key={r.as_of}><td>{r.as_of}</td><td>{fmtPrice(r.price, 'USD')}</td><td>{fmtPrice(r.p10, 'USD')} – {fmtPrice(r.p90, 'USD')}</td><td>{fmtPrice(r.outcome, 'USD')}</td>
+                        <tr key={r.made_at}><td>{when(Date.parse(r.made_at))}</td><td>{fmtPrice(r.price, 'USD')}</td><td>{fmtPrice(r.p10, 'USD')} – {fmtPrice(r.p90, 'USD')}</td><td>{fmtPrice(r.outcome, 'USD')}</td>
                           <td>{r.outcome >= r.p10 && r.outcome <= r.p90 ? <span className="tag green">Inside</span> : <span className="tag red">Outside</span>}</td></tr>
                       ))}</tbody>
                     </table></div>
                   )}
-                  <p className="hint">Logging since {graded.since}. Log prices are in USD, as recorded.</p>
+                  <p className="hint">Logging since {graded.since ? when(Date.parse(graded.since)) : '–'} ({log.rows.length} saved). Log prices are in USD, as recorded.</p>
                 </>
               )}
           </section>

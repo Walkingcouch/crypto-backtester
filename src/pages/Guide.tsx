@@ -66,7 +66,7 @@ export default function Guide() {
           <li><b>Chance it's higher</b>: from similar past moments, blended with how often the coin rose over that period in general. For every coin we've tested, direction is close to a coin flip, and the page says so.</li>
           <li><b>What happened next</b>: up to 40 past days when the coin looked like today (similar 7- and 30-day move allowing for volatility, same trend), and where it was afterwards: how often higher, typical result, worst and best.</li>
           <li><b>Track record</b>: the forecast re-made on hundreds of past days, using only prices known at the time, and checked against what actually happened. "Reliable" means the range caught the price about as often as it should.</li>
-          <li><b>Live log</b>: each day at about 10:50am Darwin time, forecasts for BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC are saved, then graded automatically when their date arrives. Nobody can tune these after the fact.</li>
+          <li><b>Live log</b>: every 5 hours, forecasts for BTC, ETH, SOL, XRP, ADA, DOGE, LINK, AVAX, DOT and LTC are saved at the live price, along with that moment's news buzz, headline tone and Fear &amp; Greed. Each one is graded automatically against the price at that exact hour once its time is up. Nobody can tune these after the fact.</li>
         </ul>
         <h3>News &amp; chatter</h3>
         <ul>
