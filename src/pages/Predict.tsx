@@ -124,8 +124,8 @@ export default function Predict() {
     const n = data.t.length, from = Math.max(0, n - Math.max(120, h * 3))
     const t = data.t.slice(from), c = data.closes.slice(from)
     const conv = c.map((p, i) => (cur === 'AUD' && fx ? p * rateAt(fx, t[i]) : p * (rate ?? 1)))
-    // make the last point the live price
-    t.push(Date.now()); conv.push(data.live * (rate ?? 1))
+    // make the last point the live price (if the history is current)
+    if (Date.now() - t[t.length - 1] < 3 * DAY) { t.push(Date.now()); conv.push(data.live * (rate ?? 1)) }
     const L = f.levels, k = scale
     return { t, prices: conv, levels: { p5: L.p5 * k, p10: L.p10 * k, p25: L.p25 * k, p50: L.p50 * k, p75: L.p75 * k, p90: L.p90 * k, p95: L.p95 * k } }
   }, [data, f, h, cur, fx, rate, scale])
@@ -166,7 +166,7 @@ export default function Predict() {
             <button key={c.sym} className={`chip chip-sm ${symbol === c.sym ? 'on' : ''}`} onClick={() => { setOther(''); set('coin', c.sym) }}><b>{c.name}</b></button>
           ))}
           <label className="chip chip-sm chip-input">
-            <input placeholder="Other, e.g. LINK" value={other} onChange={e => setOther(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+            <input className="other-coin" placeholder="Other coin, e.g. LINK" value={other} onChange={e => setOther(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
               onKeyDown={e => { if (e.key === 'Enter' && other) set('coin', other.endsWith('USDT') ? other : other + 'USDT') }}
               onBlur={() => { if (other) set('coin', other.endsWith('USDT') ? other : other + 'USDT') }} />
           </label>
@@ -240,20 +240,21 @@ export default function Predict() {
             </div>
             {!record ? <div className="empty small">Testing past forecasts…</div> : record.n === 0 ? <div className="empty small">Not enough history to test yet.</div> : (
               <>
-                <table className="record">
-                  <thead><tr><th>Forecast</th><th>Aim</th><th>Actual</th><th></th></tr></thead>
+                <div className="table-wrap"><table className="record">
+                  <thead><tr><th>Forecast</th><th>Aim</th><th>Got</th><th></th></tr></thead>
                   <tbody>
-                    {([['Middle half (50%)', 0.5, record.cover50], ['Likely range (80%)', 0.8, record.cover80], ['Wide range (90%)', 0.9, record.cover90]] as const).map(([name, aim, got]) => {
+                    {([['50% range', 0.5, record.cover50], ['80% range', 0.8, record.cover80], ['90% range', 0.9, record.cover90]] as const).map(([name, aim, got]) => {
                       const off = got - aim
                       return <tr key={name}><td>{name}</td><td>{pct0(aim)}</td><td><b>{pct0(got)}</b></td>
                         <td>{Math.abs(off) <= 0.05 ? <span className="tag green">Reliable</span> : off < 0 ? <span className="tag amber">Too narrow</span> : <span className="tag">A bit cautious</span>}</td></tr>
                     })}
-                    <tr><td>Higher or lower call <Info>Right if it said 50%+ and the price rose, or under 50% and it fell. "Always guess the usual" means always guessing whichever direction happened most often.</Info></td>
-                      <td>{pct0(Math.max(record.upRate, 1 - record.upRate))} <span className="muted small">by always guessing the usual</span></td>
+                    <tr><td>Higher/lower <Info>Right if it said 50%+ and the price rose, or under 50% and it fell. "Always guess the usual" means always guessing whichever direction happened most often.</Info></td>
+                      <td>{pct0(Math.max(record.upRate, 1 - record.upRate))}*</td>
                       <td><b>{pct0(record.hitRate)}</b></td>
                       <td>{record.brier < record.brierBase - 0.003 ? <span className="tag green">Some edge</span> : <span className="tag amber">No real edge</span>}</td></tr>
                   </tbody>
-                </table>
+                </table></div>
+                <p className="hint">* Aim for higher/lower = the score from always guessing whichever direction happened most often.</p>
                 {hasMood && (
                   <div className={`notice ${moodHelps ? 'ok' : 'info'} small`} style={{ marginTop: 12 }}>
                     <b>Market mood (Fear &amp; Greed):</b>{' '}

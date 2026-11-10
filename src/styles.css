@@ -375,3 +375,8 @@ table.record td:first-child { white-space: normal; }
 .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; margin-top: 6px; background: var(--faint); }
 .dot.green { background: var(--accent); } .dot.red { background: var(--neg); }
 .row-links { display: flex; gap: 10px; justify-content: flex-end; }
+.other-coin { width: 170px !important; }
+@media (max-width: 560px) { .chip-input:has(.other-coin) { flex: 1 1 100%; } .other-coin { width: 100% !important; } }
+table.record td, table.record th { white-space: nowrap; }
+table.record td:first-child { white-space: nowrap; }
+@media (max-width: 560px) { table.record th, table.record td { padding: 8px 5px; font-size: 13px; } table.record .tag { font-size: 11px; padding: 2px 6px; } }

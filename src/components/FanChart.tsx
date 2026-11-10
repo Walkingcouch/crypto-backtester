@@ -1,10 +1,19 @@
+import { useEffect, useRef, useState } from 'react'
 import type { Levels } from '../lib/forecast'
 
 /** Past prices plus a forecast "fan" (50/80/90% ranges) drawn as SVG on a log scale. */
 export default function FanChart({ t, prices, levels, h, fmt }: {
   t: number[]; prices: number[]; levels: Levels; h: number; fmt: (x: number) => string
 }) {
-  const W = 900, H = 340, padL = 8, padR = 92, padT = 16, padB = 34
+  const box = useRef<HTMLDivElement>(null)
+  const [cw, setCw] = useState(900)
+  useEffect(() => {
+    if (!box.current) return
+    const ro = new ResizeObserver(e => setCw(Math.max(280, Math.round(e[0].contentRect.width))))
+    ro.observe(box.current)
+    return () => ro.disconnect()
+  }, [])
+  const W = cw, H = cw < 500 ? 280 : 340, padL = 4, padR = cw < 500 ? 78 : 92, padT = 16, padB = 30
   const DAY = 86_400_000
   const t0 = t[0], tNow = t[t.length - 1], tEnd = tNow + h * DAY
   const all = [...prices, levels.p5, levels.p95]
@@ -19,12 +28,13 @@ export default function FanChart({ t, prices, levels, h, fmt }: {
   const ticks: number[] = []
   const d = new Date(t0); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0)
   while (d.getTime() < tEnd) { d.setUTCMonth(d.getUTCMonth() + 1); if (d.getTime() > t0 && d.getTime() < tEnd) ticks.push(d.getTime()) }
-  const every = Math.ceil(ticks.length / 7)
+  const every = Math.ceil(ticks.length / (cw < 500 ? 4 : 7))
   const label = (txt: string, p: number, strong = false) => (
     <text x={W - padR + 8} y={y(p) + 4} fontSize="12" fill={strong ? 'var(--text)' : 'var(--muted)'} fontWeight={strong ? 600 : 400}>{txt}</text>
   )
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Price history and forecast range">
+    <div ref={box} style={{ width: '100%' }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block', maxWidth: '100%' }} role="img" aria-label="Price history and forecast range">
       {ticks.filter((_, i) => i % every === 0).map(ms => (
         <g key={ms}>
           <line x1={x(ms)} x2={x(ms)} y1={padT} y2={H - padB} stroke="var(--border)" />
@@ -48,6 +58,7 @@ export default function FanChart({ t, prices, levels, h, fmt }: {
       {label(fmt(levels.p25), levels.p25)}
       {label(fmt(levels.p10), levels.p10)}
     </svg>
+    </div>
   )
 }
 

@@ -105,7 +105,7 @@ export default function Chatter({ base, name, data, error, zones, hLabel, moodUs
         <>
           <h3 style={{ margin: '18px 0 8px' }}>When the mood was like this, {base} {hLabel} later…</h3>
           <div className="table-wrap"><table>
-            <thead><tr><th>Mood</th><th>Days</th><th>Ended higher</th><th>Typical result</th></tr></thead>
+            <thead><tr><th>Mood</th><th>Days</th><th>Higher</th><th>Typical</th></tr></thead>
             <tbody>{zones.filter(z => z.n > 0).map(z => (
               <tr key={z.name} className={z === zoneNow ? 'hl' : ''}><td>{z.name}{z === zoneNow ? ' (now)' : ''}</td><td>{z.n}</td><td>{pct0(z.up)}</td><td className={z.median >= 0 ? 'pos' : 'neg'}>{pct(z.median)}</td></tr>
             ))}</tbody>
