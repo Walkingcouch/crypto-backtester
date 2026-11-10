@@ -30,7 +30,7 @@ export async function dailyBars(symbol) {
   let start = Date.parse('2019-01-01T00:00:00Z')
   for (let page = 0; page < 6; page++) {
     const r = await fetch(`https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=1d&startTime=${start}&limit=1000`)
-    if (!r.ok) throw new Error(`Binance ${symbol} ${r.status}`)
+    if (!r.ok) throw new Error(r.status === 400 ? `${symbol.replace(/USDT$/, '')} isn't traded on Binance against USDT` : `Binance ${symbol} ${r.status}`)
     const rows = await r.json()
     if (!rows.length) break
     for (const k of rows) out.push([+k[0], +k[4]])
