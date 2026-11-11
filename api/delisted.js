@@ -59,6 +59,21 @@ async function rows(key) {
   return out
 }
 
+async function klinesFromApi(sym) {
+  const out = []
+  let start = Date.parse('2019-01-01T00:00:00Z')
+  for (let page = 0; page < 6; page++) {
+    const r = await fetch(`${API}/klines?symbol=${sym}&interval=1d&startTime=${start}&limit=1000`)
+    if (!r.ok) { if (page === 0) return null; break }
+    const k = await r.json()
+    if (!k.length) break
+    for (const x of k) out.push([+x[0], +x[4], +x[7]])
+    start = +k[k.length - 1][0] + 86_400_000
+    if (k.length < 1000) break
+  }
+  return out
+}
+
 const errors = []
 async function pool(items, n, fn) {
   const out = new Array(items.length)
@@ -72,13 +87,20 @@ async function pool(items, n, fn) {
 export default async function handler(req, res) {
   const t0 = Date.now()
   try {
-    const live = new Set((await (await fetch(`${API}/ticker/price`)).json()).map(t => t.symbol))
-    const syms = CANDIDATES.map(b => b + 'USDT').filter(s => !live.has(s))
-    const lists = await pool(syms, 16, months)
-    const jobs = []
-    syms.forEach((s, i) => (lists[i] || []).filter(k => k >= `data/spot/monthly/klines/${s}/1d/${s}-1d-2019-01`).slice(-MAX_MONTHS).forEach(k => jobs.push([s, k])))
-    const got = await pool(jobs, 24, ([, k]) => rows(k))
+    // ticker/price still lists delisted pairs, so use exchangeInfo's status instead
+    const info = await (await fetch(`${API}/exchangeInfo?permissions=SPOT`)).json()
+    const trading = new Set((info.symbols || []).filter(x => x.status === 'TRADING').map(x => x.symbol))
+    const syms = CANDIDATES.map(b => b + 'USDT').filter(s => !trading.has(s))
     const bySym = new Map()
+    // 1) Binance's market-data API usually still serves delisted pairs' history
+    const viaApi = await pool(syms, 8, klinesFromApi)
+    syms.forEach((s, i) => { if (viaApi[i]?.length) bySym.set(s, viaApi[i]) })
+    // 2) otherwise, the monthly archive files
+    const rest = syms.filter(s => !bySym.has(s))
+    const lists = await pool(rest, 16, months)
+    const jobs = []
+    rest.forEach((s, i) => (lists[i] || []).filter(k => k >= `data/spot/monthly/klines/${s}/1d/${s}-1d-2019-01`).slice(-MAX_MONTHS).forEach(k => jobs.push([s, k])))
+    const got = await pool(jobs, 24, ([, k]) => rows(k))
     jobs.forEach(([s], i) => { if (got[i]) bySym.set(s, (bySym.get(s) || []).concat(got[i])) })
     const coins = [...bySym].map(([s, r]) => ({ base: s.slice(0, -4), rows: r.sort((a, b) => a[0] - b[0]) }))
       .filter(c => c.rows.length >= 30)
@@ -87,7 +109,7 @@ export default async function handler(req, res) {
     // only cache a good result for long; an empty one (archive unreachable) is retried soon
     res.setHeader('cache-control', coins.length ? 'public, s-maxage=2592000, stale-while-revalidate=2592000' : 'no-store')
     const q = new URL(req.url, 'http://x').searchParams
-    if (q.get('summary') === '1') return res.status(200).send(JSON.stringify({ ms: Date.now() - t0, files: jobs.length, checked: syms.length, errors, coins: coins.map(c => `${c.base} ${c.from}→${c.to} (${c.rows.length}d)`) }))
+    if (q.get('summary') === '1') return res.status(200).send(JSON.stringify({ ms: Date.now() - t0, files: jobs.length, checked: syms.length, viaApi: syms.length - rest.length, errors, coins: coins.map(c => `${c.base} ${c.from}→${c.to} (${c.rows.length}d)`) }))
     res.status(200).send(JSON.stringify({ updated: new Date().toISOString(), ms: Date.now() - t0, coins }))
   } catch (e) {
     res.status(500).json({ error: String(e && e.message || e) })
