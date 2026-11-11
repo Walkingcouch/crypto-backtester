@@ -34,7 +34,7 @@ export const LAB = {
 
 export const ACCOUNTS = [
   { id: 'john', owner: 'John', broker: 'coinspot', exchange: 'CoinSpot', fee: 0.001, feeLabel: '0.1% market order', startAud: 1000 },
-  { id: 'mark', owner: 'Mark', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.012, feeLabel: '1.2% taker (lowest tier)', startAud: 150 },
+  { id: 'mark', owner: 'Mark', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.012, feeLabel: '1.2% taker (lowest tier)', startAud: 1000 },
 ]
 
 // ---------------------------------------------------------------- rules
@@ -233,6 +233,18 @@ export function step(state, market, now, S = LAB) {
   const data = { coins: market.coins }
   const rate = market.audPerUsd
   for (const a of Object.values(state.accounts)) if (a.cashAud == null) { a.cashAud = (a.cashUsd ?? a.startUsd) * a.startAud / a.startUsd; delete a.cashUsd }
+  // an account that has never traded can only ever have been worth its start (clears the old FX blip)
+  for (const acct of Object.values(state.accounts)) if (!acct.stats.n && !acct.positions.length) for (const h of state.history) if (h[acct.id] != null) h[acct.id] = acct.startAud
+  // if a starting amount was changed in ACCOUNTS, scale that account (cash, positions, history) to match
+  for (const cfg of ACCOUNTS) {
+    const acct = state.accounts[cfg.id]
+    if (!acct || acct.startAud === cfg.startAud) continue
+    const k = cfg.startAud / acct.startAud
+    acct.startAud = cfg.startAud; acct.startUsd *= k; acct.cashAud *= k
+    for (const p of [...acct.positions, ...acct.closed]) { p.units *= k; p.costUsd *= k }
+    for (const h of state.history) if (h[cfg.id] != null) h[cfg.id] = +(h[cfg.id] * k).toFixed(2)
+    push(state.events, { t: now, kind: 'note', text: `${acct.owner}'s account rescaled to start at A$${cfg.startAud} (same as the other account), keeping its trades and results.` }, 300)
+  }
 
   // 1. exits (always run — protective exits execute even at a loss)
   for (const s of state.shadow.slice()) {
