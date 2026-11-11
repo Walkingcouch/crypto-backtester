@@ -181,7 +181,7 @@ export default function Lab() {
               <div className="table-wrap"><table className="record">
                 <thead><tr><th>Rule</th><th>Older data</th><th>Last {LAB.validDays} days</th><th>Passed</th></tr></thead>
                 <tbody>{state.found.slice(0, 12).map(f => (
-                  <tr key={f.id}><td style={{ minWidth: 220 }}>{f.text}</td>
+                  <tr key={f.id}><td style={{ minWidth: 200, whiteSpace: 'normal' }}>{f.text}</td>
                     <td className={cls(f.train.mean)}>{pct(f.train.mean)} · {f.train.n} trades</td>
                     <td className={cls(f.valid.mean)}>{pct(f.valid.mean)} · {f.valid.n} trades</td>
                     <td>{f.pass ? <span className="tag green">Yes</span> : <span className="tag">No</span>}</td></tr>
