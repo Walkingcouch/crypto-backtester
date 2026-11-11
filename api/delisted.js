@@ -59,11 +59,12 @@ async function rows(key) {
   return out
 }
 
+const errors = []
 async function pool(items, n, fn) {
   const out = new Array(items.length)
   let next = 0
   await Promise.all(Array.from({ length: n }, async () => {
-    while (next < items.length) { const k = next++; try { out[k] = await fn(items[k]) } catch { out[k] = null } }
+    while (next < items.length) { const k = next++; try { out[k] = await fn(items[k]) } catch (e) { out[k] = null; if (errors.length < 5) errors.push(String(e && e.message || e).slice(0, 200)) } }
   }))
   return out
 }
@@ -83,9 +84,10 @@ export default async function handler(req, res) {
       .filter(c => c.rows.length >= 30)
       .map(c => ({ ...c, from: new Date(c.rows[0][0]).toISOString().slice(0, 10), to: new Date(c.rows[c.rows.length - 1][0]).toISOString().slice(0, 10) }))
     res.setHeader('content-type', 'application/json')
-    res.setHeader('cache-control', 'public, s-maxage=2592000, stale-while-revalidate=2592000')
+    // only cache a good result for long; an empty one (archive unreachable) is retried soon
+    res.setHeader('cache-control', coins.length ? 'public, s-maxage=2592000, stale-while-revalidate=2592000' : 'no-store')
     const q = new URL(req.url, 'http://x').searchParams
-    if (q.get('summary') === '1') return res.status(200).send(JSON.stringify({ ms: Date.now() - t0, files: jobs.length, coins: coins.map(c => `${c.base} ${c.from}→${c.to} (${c.rows.length}d)`) }))
+    if (q.get('summary') === '1') return res.status(200).send(JSON.stringify({ ms: Date.now() - t0, files: jobs.length, checked: syms.length, errors, coins: coins.map(c => `${c.base} ${c.from}→${c.to} (${c.rows.length}d)`) }))
     res.status(200).send(JSON.stringify({ updated: new Date().toISOString(), ms: Date.now() - t0, coins }))
   } catch (e) {
     res.status(500).json({ error: String(e && e.message || e) })
