@@ -169,11 +169,11 @@ export default function Picks() {
               </table></div>
               <label className="toggle-row">
                 <input type="checkbox" checked={withDelisted} onChange={e => setWithDelisted(e.target.checked)} />
-                <span><b>Include coins that were later delisted</b> <span className="muted small">(crashed, shut down or renamed: LUNA, FTT, MATIC and others, from Binance's archive). If the rules held one when it stopped trading, it's sold at its last price.</span></span>
+                <span><b>Include coins that crashed or were delisted</b> <span className="muted small">(about 90 coins such as old LUNA, FTT, MATIC, XMR and WAVES that were once heavily traded but have since collapsed, been delisted or renamed, so today's top-50 misses them). If the rules held one when it stopped trading, it's sold at its last price.</span></span>
               </label>
               {withDelisted && data.delisted && (
                 <div className="notice info small" style={{ marginTop: 8 }}>
-                  Added {data.delisted.length} delisted coin{data.delisted.length === 1 ? '' : 's'}: {data.delisted.map(d => d.base).join(', ')}.
+                  Added {data.delisted.length} crashed or delisted coin{data.delisted.length === 1 ? '' : 's'}: {data.delisted.map(d => d.base).join(', ')}.
                   {' '}{test.strategy.delistings ? `The picks were holding a coin when it was delisted ${test.strategy.delistings} time${test.strategy.delistings === 1 ? '' : 's'}.` : 'The picks never held a coin at the moment it was delisted.'}
                   {' '}Compare with the toggle off to see how much survivorship bias flattered the result.
                 </div>

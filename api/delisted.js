@@ -10,7 +10,7 @@ const API = 'https://data-api.binance.vision/api/v3'
 // Coins that were large or heavily traded on Binance at some point since 2019 and are no longer
 // listed there (crashes, exchange collapses, scandals, migrations / ticker changes). Any that
 // still trade today are dropped automatically.
-const CANDIDATES = [
+const CANDIDATES = [  // delisted from Binance
   'LUNA', 'BTT', 'NPXS', 'BCHSV', 'BCHABC', 'SRM', 'FTT', 'WAVES', 'OMG', 'XEM', 'MULTI', 'ANC', 'MITH', 'HNT',
   'BTS', 'COCOS', 'AGIX', 'OCEAN', 'MATIC', 'FTM', 'RNDR', 'EOS', 'MKR', 'XMR', 'KLAY', 'LOOM', 'TORN', 'DREP',
   'ERD', 'LEND', 'STRAT', 'XZC', 'MCO', 'BZRX', 'TOMO', 'GTO', 'REN', 'VGX', 'BNX', 'ANT', 'MDX', 'BOND', 'KEEP',
@@ -18,6 +18,11 @@ const CANDIDATES = [
   'NEBL', 'LINA', 'KEY', 'TROY', 'POLS', 'OOKI', 'CTXC', 'REEF', 'BLZ', 'AMB', 'FOR', 'FRONT', 'IRIS', 'PERL',
   'BEAM', 'VIDT', 'YFII', 'SNM', 'PNT', 'GLMR', 'WRX', 'ALPACA', 'XVG', 'VITE', 'DGB', 'SC', 'BAL', 'PDA',
 ]
+// Coins still listed today but which crashed and faded out of the top-50 that Picks scans, so
+// they'd be missed too. Old LUNA (Terra, collapsed May 2022) shares its ticker with today's
+// relaunched LUNA, so only its history up to the collapse is used.
+const FADED = ['FTT', 'LUNC', 'CEL', 'GALA', 'AXS', 'SAND', 'MANA', 'ICP', 'CHZ', 'ALICE', 'SLP', 'KAVA', 'ZIL', 'ONE', 'CELO', 'APE']
+const OLD = [{ base: 'LUNA', sym: 'LUNAUSDT', end: Date.parse('2022-05-14T00:00:00Z') }]
 const MAX_MONTHS = 100
 
 async function text(url) {
@@ -59,11 +64,11 @@ async function rows(key) {
   return out
 }
 
-async function klinesFromApi(sym) {
+async function klinesFromApi(sym, end) {
   const out = []
   let start = Date.parse('2019-01-01T00:00:00Z')
   for (let page = 0; page < 6; page++) {
-    const r = await fetch(`${API}/klines?symbol=${sym}&interval=1d&startTime=${start}&limit=1000`)
+    const r = await fetch(`${API}/klines?symbol=${sym}&interval=1d&startTime=${start}&limit=1000${end ? `&endTime=${end}` : ''}`)
     if (!r.ok) { if (page === 0) return null; break }
     const k = await r.json()
     if (!k.length) break
@@ -91,9 +96,19 @@ export default async function handler(req, res) {
     const info = await (await fetch(`${API}/exchangeInfo?permissions=SPOT`)).json()
     const trading = new Set((info.symbols || []).filter(x => x.status === 'TRADING').map(x => x.symbol))
     const syms = CANDIDATES.map(b => b + 'USDT').filter(s => !trading.has(s))
+      .concat(FADED.map(b => b + 'USDT').filter(s => trading.has(s)))
     const bySym = new Map()
+    for (const o of OLD) {
+      let r = await klinesFromApi(o.sym, o.end).catch(() => null)
+      if (!r?.length) {   // archive fallback, months before the end date
+        const keys = (await months(o.sym).catch(() => [])).filter(k => k.slice(-11, -4) < new Date(o.end).toISOString().slice(0, 7) || k.slice(-11, -4) === new Date(o.end).toISOString().slice(0, 7))
+        r = (await pool(keys, 12, rows)).flat().filter(Boolean)
+      }
+      r = (r || []).filter(x => x[0] < o.end)
+      if (r.length) bySym.set(o.base + 'USDT', r.sort((a, b) => a[0] - b[0]))
+    }
     // 1) Binance's market-data API usually still serves delisted pairs' history
-    const viaApi = await pool(syms, 8, klinesFromApi)
+    const viaApi = await pool(syms, 8, s => klinesFromApi(s))
     syms.forEach((s, i) => { if (viaApi[i]?.length) bySym.set(s, viaApi[i]) })
     // 2) otherwise, the monthly archive files
     const rest = syms.filter(s => !bySym.has(s))
