@@ -27,6 +27,8 @@ export const BROKERS: Broker[] = [
     fees: [{ label: 'AUD markets', fee: 0.85, note: 'Lowest volume tier' }] },
   { id: 'kraken', name: 'Kraken Pro', site: 'https://pro.kraken.com',
     fees: [{ label: 'Market order (taker)', fee: 0.4 }, { label: 'Limit order (maker)', fee: 0.25 }] },
+  { id: 'coinbase', name: 'Coinbase Advanced', site: 'https://www.coinbase.com/advanced-trade',
+    fees: [{ label: 'Market order (taker)', fee: 1.2, note: 'Lowest volume tier (0.6–1.2%); check your account' }, { label: 'Limit order (maker)', fee: 0.4, note: 'Lowest volume tier' }] },
   { id: 'binance', name: 'Binance', site: 'https://www.binance.com',
     fees: [{ label: 'Spot order', fee: 0.1 }] },
   { id: 'other', name: 'Other / custom', site: '',

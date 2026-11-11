@@ -41,6 +41,10 @@ const SOURCES = {
     const j = await getJSON('https://api.btcmarkets.net/v3/markets')
     return new Set((Array.isArray(j) ? j : []).filter(m => m.status !== 'Offline').map(m => norm(m.baseAssetName)))
   },
+  async coinbase() {
+    const j = await getJSON('https://api.exchange.coinbase.com/products')
+    return new Set((Array.isArray(j) ? j : []).filter(p => p && p.status === 'online' && !p.trading_disabled).map(p => norm(p.base_currency)))
+  },
   async kraken() {
     const j = await getJSON('https://api.kraken.com/0/public/AssetPairs')
     const out = new Set()

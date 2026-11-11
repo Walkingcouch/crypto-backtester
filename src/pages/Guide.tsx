@@ -8,7 +8,7 @@ export default function Guide() {
           <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
-            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#picks">Picks</a><a href="#read">Reading results</a>
+            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#picks">Picks</a><a href="#lab">Lab</a><a href="#read">Reading results</a>
             <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
@@ -35,7 +35,7 @@ export default function Guide() {
         <p>Pick where you actually trade, so the numbers match what you'd really pay. On the Test page it's question 4, <b>Where do you trade?</b>; on Markets it's the <b>Your exchange</b> dropdown. Your choice is remembered.</p>
         <ul>
           <li><b>CoinSpot:</b> <i>Market / limit order</i> 0.1% per trade, or <i>Instant buy / sell</i> 1% (the quick Buy button). Markets shows CoinSpot's own live AUD prices and, by default, only coins listed on CoinSpot.</li>
-          <li><b>Swyftx</b> 0.6% · <b>Independent Reserve</b> 0.5% · <b>BTC Markets</b> 0.85% (AUD markets, lowest tier) · <b>Kraken Pro</b> 0.40% market / 0.25% limit · <b>Binance</b> 0.1%.</li>
+          <li><b>Swyftx</b> 0.6% · <b>Independent Reserve</b> 0.5% · <b>BTC Markets</b> 0.85% (AUD markets, lowest tier) · <b>Kraken Pro</b> 0.40% market / 0.25% limit · <b>Coinbase Advanced</b> 1.2% market / 0.4% limit (lowest tier) · <b>Binance</b> 0.1%.</li>
           <li>These are the published fees at the lowest volume tier, checked November 2026. Exchanges change fees, so type your own under "Other" if yours differs.</li>
         </ul>
         <p><b>Currency:</b> use the <b>AUD / USD</b> dropdown at the top of every page. In AUD:</p>
@@ -86,6 +86,17 @@ export default function Guide() {
           <li><b>Weekly review,</b> skipping tiny changes to save fees. No one-day signals, because one-day jumps in small coins tend to reverse (Zaremba et al., 2021).</li>
         </ul>
         <p>The page shows the suggested mix for your budget, what changed since last week, coins to watch or avoid, and a <b>track record</b>: following the picks week by week since 2019, with your exchange's fee, compared with just holding Bitcoin and with a top-10 basket. That history only includes coins that still trade today, so it flatters every strategy. Coins that collapsed and were delisted are missing ("survivorship bias"). These are rules-based suggestions for your own research, not personal financial advice.</p>
+
+        <h2 id="lab">Lab (self-improving paper trading)</h2>
+        <p>The <Link to="/lab">Lab</Link> is a bot that trades pretend money by itself every 5 hours, with two accounts: John's on CoinSpot fees (0.1%) and Mark's on Coinbase Advanced fees (1.2% taker at the lowest tier). It places no real orders.</p>
+        <ul>
+          <li><b>It finds its own rules.</b> Each week it tests 39 candidate rules (for example "buy a new 20-day high after a quiet fortnight") on the 20 most-traded coins. A rule must make money after costs on older data <i>and</i> on the last 180 days, which it was never chosen on.</li>
+          <li><b>Cost gate.</b> It only buys when a cautious estimate of the gain (every past signal of that rule, losers included, minus a margin for luck) beats the fees, the exchange's live buy/sell spread, slippage and a 0.3% safety margin. Stop-losses always run, even at a loss. With no live quote from the exchange, it skips.</li>
+          <li><b>Challengers and rollback.</b> Up to three other rules trade "in the shadow". One replaces the current rule only when its own live record is better over at least 12 trades. The old rule stays in the shadow, so if the new one does worse it's rolled back automatically. One losing trade never changes anything: that's mostly luck.</li>
+          <li><b>Fixed risk limits</b> the bot can't change: at most 10% of an account per coin, a stop-loss costs at most about 1% of the account, at most 8 open positions, and at least 40% in cash.</li>
+          <li><b>Morning summary</b> at the top of the page: both balances, win rates and the latest rule changes.</li>
+        </ul>
+        <p>Expect the Coinbase account to trade far less: at 1.2% each way the gate blocks most signals. That's the point of the gate. Judge the Lab on months of results, not days.</p>
 
         <h2 id="read">Reading results</h2>
         <ul>

@@ -406,3 +406,16 @@ table.record td:first-child { white-space: nowrap; }
 .watch-row { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
 .how-list { padding-left: 20px; } .how-list li { margin-bottom: 8px; }
 .sources { padding-left: 18px; } .sources li { margin-bottom: 8px; line-height: 1.45; }
+
+/* Lab */
+.lab-events { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 8px; }
+.lab-events li { font-size: 14px; line-height: 1.45; }
+.lab-events .tag { margin-right: 4px; }
+.lab-rule { border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+.lab-rule.small { padding: 10px 12px; }
+.lab-rule-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lab-rule-text { margin: 8px 0; font-weight: 600; }
+.lab-rule.small .lab-rule-text { font-size: 14.5px; }
+.lab-rule-stats { display: grid; gap: 3px; font-size: 13px; color: var(--muted); }
+.kpi .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 2px; }
+@media (max-width: 560px) { .page .kpis { grid-template-columns: 1fr !important; } }
