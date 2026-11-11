@@ -54,7 +54,7 @@ export function describe(r) {
   const reg = r.regime === 'any' ? '' : ` ${REGIMES[r.regime]}`
   const hold = `Hold up to ${r.H} days, with a stop-loss.`
   if (r.kind === 'breakout') return `Buy when a coin closes at a new ${r.n}-day high${reg}. ${hold}`
-  if (r.kind === 'dip') return `Buy a sharp ${r.k === 1.5 ? '' : 'very sharp '}5-day dip while the coin is above its 100-day average${reg}. ${hold}`
+  if (r.kind === 'dip') return `Buy a ${r.k === 1.5 ? 'sharp' : 'very sharp'} 5-day dip while the coin is above its 100-day average${reg}. ${hold}`
   if (r.kind === 'surge') return `Buy after an unusually strong 20-day rise${reg}. ${hold}`
   return `Buy after an unusually hard 5-day fall (bet on a bounce). ${hold}`
 }
