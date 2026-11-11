@@ -4,6 +4,7 @@ import { Disclosure, Info } from '../components/Info'
 import { fmtMoney, useCurrency } from '../lib/currency'
 import { estimate, LAB, type LabRule, type LabState } from '../lib/lab'
 import { supabase } from '../lib/supabase'
+import { fmtPrice } from '../lib/markets'
 
 const pct = (x: number, d = 1) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
 const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
@@ -67,6 +68,7 @@ export default function Lab() {
   const rate = state?.audPerUsd ?? 1.5
   const money = (aud: number) => fmtMoney(cur === 'AUD' ? aud : aud / rate, cur, Math.abs(aud) >= 100 ? 0 : 2)
   const moneyUsd = (usd: number) => money(usd * rate)
+  const px = (usd: number) => `${cur === 'AUD' ? 'A$' : '$'}${fmtPrice(cur === 'AUD' ? usd * rate : usd)}`
   const champ = state?.rules.find(r => r.status === 'champion')
   const challengers = state?.rules.filter(r => r.status === 'challenger') ?? []
   const retired = state?.rules.filter(r => r.status === 'retired') ?? []
@@ -156,16 +158,24 @@ export default function Lab() {
               <div key={a.id} style={{ marginBottom: 14 }}>
                 <h3>{a.exchange} · cash {money(a.cashAud)}</h3>
                 {a.positions.length ? <div className="table-wrap"><table className="record">
-                  <thead><tr><th>Coin</th><th>Size</th><th>Bought</th><th>Stop</th><th>Sell by</th><th>Rule</th></tr></thead>
-                  <tbody>{a.positions.map(p => (
+                  <thead><tr><th>Coin</th><th>Bought for</th><th>Buy price</th><th>Price now</th><th>Worth now</th><th>Stop-loss</th><th>Bought</th><th>Sell by</th><th>Rule</th></tr></thead>
+                  <tbody>{a.positions.map(p => {
+                    const now = state.prices?.[p.base]
+                    const worth = now ? p.units * now : NaN
+                    return (
                     <tr key={p.base}><td><Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link></td><td>{moneyUsd(p.costUsd)}</td>
-                      <td>{when(p.t)}</td><td className="neg">{pct(p.stop / p.entryPx - 1)}</td><td>{when(p.exitT)}</td><td>v{p.v}</td></tr>
-                  ))}</tbody></table></div> : <p className="muted small">No open positions.</p>}
+                      <td>{px(p.entryPx)}</td>
+                      <td>{now ? <>{px(now)} <span className={cls(now / p.entryPx - 1)}>({pct(now / p.entryPx - 1)})</span></> : '–'}</td>
+                      <td>{now ? <>{moneyUsd(worth)} <span className={cls(worth / p.costUsd - 1)}>({pct(worth / p.costUsd - 1)} after costs)</span></> : '–'}</td>
+                      <td className="neg">{px(p.stop)} ({pct(p.stop / p.entryPx - 1)})</td>
+                      <td>{when(p.t)}</td><td>{when(p.exitT)}</td><td>v{p.v}</td></tr>
+                  )})}</tbody></table></div>
+                  : <p className="muted small">No open positions.</p>}
                 {a.closed.length > 0 && <Disclosure title={`Closed trades (${a.stats.n})`}>
                   <div className="table-wrap"><table className="record">
-                    <thead><tr><th>Coin</th><th>Result after costs</th><th>Before costs</th><th>Why sold</th><th>Sold</th></tr></thead>
+                    <thead><tr><th>Coin</th><th>Result after costs</th><th>Before costs</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
                     <tbody>{a.closed.slice().reverse().map((c, i) => (
-                      <tr key={i}><td><b>{c.base}</b></td><td className={cls(c.net)}>{pct(c.net)}</td><td>{pct(c.gross)}</td><td>{c.why === 'stop' ? 'Stop-loss' : 'Time up'}</td><td>{when(c.exitT)}</td></tr>
+                      <tr key={i}><td><b>{c.base}</b></td><td className={cls(c.net)}>{pct(c.net)}</td><td>{pct(c.gross)}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss' : 'Time up'}</td><td>{when(c.exitT)}</td></tr>
                     ))}</tbody></table></div>
                 </Disclosure>}
               </div>

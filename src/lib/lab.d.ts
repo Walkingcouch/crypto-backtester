@@ -19,7 +19,7 @@ export interface LabState {
   version: number; created: number; lastRun: number | null; lastSignalDay: number; lastCoach: number; nextV: number
   rules: LabRule[]; shadow: { v: number; base: string; entry: number; t: number; stop: number; exitT: number }[]
   events: LabEvent[]; history: ({ t: number } & Record<string, number>)[]
-  accounts: Record<string, Account>; found?: Found[]; coinsScanned?: string[]; audPerUsd?: number
+  accounts: Record<string, Account>; prices?: Record<string, number>; found?: Found[]; coinsScanned?: string[]; audPerUsd?: number
 }
 export const DAY: number
 export const LAB: {

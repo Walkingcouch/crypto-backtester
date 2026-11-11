@@ -312,6 +312,9 @@ export function step(state, market, now, S = LAB) {
   push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 600)
   for (const a of Object.values(state.accounts)) { a.valueAud = value(a); a.valueUsd = value(a) / rate }
   state.audPerUsd = market.audPerUsd
+  // latest prices of everything held, for the Positions table
+  state.prices = {}
+  for (const acct of Object.values(state.accounts)) for (const pos of acct.positions) if (price(pos.base) > 0) state.prices[pos.base] = price(pos.base)
   state.lastRun = now
   return state
 }
