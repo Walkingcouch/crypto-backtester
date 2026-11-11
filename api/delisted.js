@@ -72,7 +72,7 @@ async function klinesFromApi(sym, end) {
     if (!r.ok) { if (page === 0) return null; break }
     const k = await r.json()
     if (!k.length) break
-    for (const x of k) out.push([+x[0], +x[4], +x[7]])
+    for (const x of k) if (+x[0] + 86_400_000 <= Date.now()) out.push([+x[0], +x[4], +x[7]])   // completed days only
     start = +k[k.length - 1][0] + 86_400_000
     if (k.length < 1000) break
   }

@@ -59,7 +59,7 @@ export default async function handler(req, res) {
       const r = await fetch(`https://${host}/api/delisted`)
       if (!r.ok) throw new Error(`delisted coins unavailable (${r.status})`)
       const d = await r.json()
-      for (const c of d.coins || []) if (!series.some(s => s.base === c.base)) { series.push({ base: c.base, rows: c.rows }); delisted.push({ base: c.base, from: c.from, to: c.to }) }
+      for (const c of d.coins || []) if (!series.some(s => s.base === c.base)) { series.push({ base: c.base, rows: c.rows.filter(([t]) => t + DAY <= Date.now()) }); delisted.push({ base: c.base, from: c.from, to: c.to }) }
     }
     // align on a common daily calendar
     const first = Math.min(...series.map(s => s.rows[0]?.[0] ?? Infinity))
@@ -92,7 +92,7 @@ export default async function handler(req, res) {
         asOf: new Date(days[n]).toISOString().slice(0, 10), coinsChecked: coins.length, delisted, ms: Date.now() - t0, cash: now.cash,
         picks: now.universe.map(a => `${a.base} ${a.verdict} ${(a.weight * 100).toFixed(1)}% ${a.checks}/${a.of} vol${(a.vol * 100).toFixed(0)}%`),
         tests: tests.map(t => ({ fee: t.fee, from: new Date(t.start).toISOString().slice(0, 10),
-          picks: t.strategy.metrics, exposure: t.strategy.avgExposure, trades: t.strategy.trades, btc: t.btc.metrics, basket: t.basket.metrics })),
+          picks: t.strategy.metrics, exposure: t.strategy.avgExposure, trades: t.strategy.trades, delistings: t.strategy.delistings, btc: t.btc.metrics, basket: t.basket.metrics })),
       }))
     }
     res.status(200).send(JSON.stringify({
