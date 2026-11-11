@@ -10,7 +10,7 @@ export interface Position { base: string; v: number; units: number; entryPx: num
 export interface Closed extends Position { exitPx: number; net: number; gross: number; why: 'stop' | 'time' }
 export interface Account {
   id: string; owner: string; broker: string; exchange: string; fee: number; feeLabel: string; startAud: number
-  startUsd: number; cashUsd: number; valueUsd?: number; valueAud?: number
+  startUsd: number; cashAud: number; valueUsd?: number; valueAud?: number
   positions: Position[]; closed: Closed[]; stats: { n: number; wins: number; sumNet: number }
   blocked: { cost: number; quote: number; limits: number }; lastBlocked: { t: number; base: string; v: number; why: string }[]
 }

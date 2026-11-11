@@ -153,7 +153,8 @@ export function newState(audPerUsd, now) {
     version: 1, created: now, lastRun: null, lastSignalDay: 0, lastCoach: 0, nextV: 1,
     rules: [], shadow: [], events: [], history: [],
     accounts: Object.fromEntries(ACCOUNTS.map(a => [a.id, {
-      ...a, startUsd: a.startAud / audPerUsd, cashUsd: a.startAud / audPerUsd, positions: [], closed: [],
+      ...a, startUsd: a.startAud / audPerUsd, cashAud: a.startAud,  // cash is kept in AUD, like a real CoinSpot/Coinbase AUD wallet
+      positions: [], closed: [],
       stats: { n: 0, wins: 0, sumNet: 0 }, blocked: { cost: 0, quote: 0, limits: 0 }, lastBlocked: [],
     }])),
   }
@@ -230,6 +231,8 @@ export function step(state, market, now, S = LAB) {
   const price = b => market.live[b]
   const ruleByV = new Map(state.rules.map(r => [r.v, r]))
   const data = { coins: market.coins }
+  const rate = market.audPerUsd
+  for (const a of Object.values(state.accounts)) if (a.cashAud == null) { a.cashAud = (a.cashUsd ?? a.startUsd) * a.startAud / a.startUsd; delete a.cashUsd }
 
   // 1. exits (always run — protective exits execute even at a loss)
   for (const s of state.shadow.slice()) {
@@ -247,7 +250,7 @@ export function step(state, market, now, S = LAB) {
       if (!stopped && now < pos.exitT) continue
       const proceeds = pos.units * p * (1 - pos.spread / 2 - S.slippage) * (1 - a.fee)
       const net = proceeds / pos.costUsd - 1
-      a.cashUsd += proceeds
+      a.cashAud += proceeds * rate
       a.positions.splice(a.positions.indexOf(pos), 1)
       a.stats.n++; a.stats.sumNet += net; if (net > 0) a.stats.wins++
       push(a.closed, { ...pos, exitT: now, exitPx: p, net, gross: p / pos.entryPx - 1, why: stopped ? 'stop' : 'time' }, 200)
@@ -286,9 +289,9 @@ export function step(state, market, now, S = LAB) {
   }
 
   // 4. valuation
-  const value = a => a.cashUsd + a.positions.reduce((s, pos) => s + pos.units * (price(pos.base) || pos.entryPx), 0)
-  push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +(value(a) * market.audPerUsd).toFixed(2)])) }, 600)
-  for (const a of Object.values(state.accounts)) { a.valueUsd = value(a); a.valueAud = value(a) * market.audPerUsd }
+  const value = a => a.cashAud + rate * a.positions.reduce((s, pos) => s + pos.units * (price(pos.base) || pos.entryPx), 0)   // AUD
+  push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 600)
+  for (const a of Object.values(state.accounts)) { a.valueAud = value(a); a.valueUsd = value(a) / rate }
   state.audPerUsd = market.audPerUsd
   state.lastRun = now
   return state
@@ -306,13 +309,14 @@ function enter(a, r, base, p, sp, market, now, S, log) {
     note(`estimated gain ${pct(est)} doesn't cover costs ${pct(cost)} + margin ${pct(S.margin)}`)
     return
   }
-  const equity = a.cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
-  const invested = equity - a.cashUsd
-  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, a.cashUsd, S.maxInvested * equity - invested)
+  const cashUsd = a.cashAud / market.audPerUsd
+  const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
+  const invested = equity - cashUsd
+  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested)
   if (a.positions.length >= S.maxOpen || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fill = p * (1 + spread / 2 + S.slippage)
   const units = alloc * (1 - a.fee) / fill
-  a.cashUsd -= alloc
+  a.cashAud -= alloc * market.audPerUsd
   a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT: now + r.spec.H * DAY, spread, est, cost })
   log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; estimate ${pct(est)} vs cost ${pct(cost)}).`)
 }

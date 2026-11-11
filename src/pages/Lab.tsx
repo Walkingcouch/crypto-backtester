@@ -154,7 +154,7 @@ export default function Lab() {
             <h2>Positions</h2>
             {accts.map(a => (
               <div key={a.id} style={{ marginBottom: 14 }}>
-                <h3>{a.owner} · cash {moneyUsd(a.cashUsd)}</h3>
+                <h3>{a.owner} · cash {money(a.cashAud)}</h3>
                 {a.positions.length ? <div className="table-wrap"><table className="record">
                   <thead><tr><th>Coin</th><th>Size</th><th>Bought</th><th>Stop</th><th>Sell by</th><th>Rule</th></tr></thead>
                   <tbody>{a.positions.map(p => (
