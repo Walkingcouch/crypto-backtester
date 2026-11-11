@@ -12,7 +12,7 @@ export interface CoinView {
 }
 export interface Picks { day: number; universe: (CoinView & { verdict: 'buy' | 'hold' | 'avoid'; weight: number })[]; cash: number }
 export interface Metrics { multiple: number; cagr: number; sharpe: number; maxDrawdown: number; years: number }
-export interface Run { eq: number[]; days: number[]; exposure: number[]; trades: number; feesPaid: number; metrics: Metrics | null }
+export interface Run { eq: number[]; days: number[]; exposure: number[]; trades: number; feesPaid: number; delistings?: number; metrics: Metrics | null }
 export interface PickBacktest { start: number; fee: number; strategy: Run & { avgExposure: number }; btc: Run; basket: Run }
 export function analyseCoin(coin: CoinSeries, i: number, S?: PickSettings): CoinView | null
 export function picksAt(data: PickData, i: number, S?: PickSettings): Picks

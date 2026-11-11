@@ -33,9 +33,14 @@ export const LAB = {
 }
 
 export const ACCOUNTS = [
-  { id: 'john', owner: 'John', broker: 'coinspot', exchange: 'CoinSpot', fee: 0.001, feeLabel: '0.1% market order', startAud: 1000 },
-  { id: 'mark', owner: 'Mark', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.012, feeLabel: '1.2% taker (lowest tier)', startAud: 1000 },
+  { id: 'john', owner: 'CoinSpot', broker: 'coinspot', exchange: 'CoinSpot', fee: 0.001, feeLabel: '0.1% market order', startAud: 1000 },
+  { id: 'mark', owner: 'Coinbase', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.012, feeLabel: '1.2% taker (lowest tier)', startAud: 1000 },
+  { id: 'binance', owner: 'Binance', broker: 'binance', exchange: 'Binance', fee: 0.001, feeLabel: '0.1% spot', startAud: 1000 },
 ]
+const freshAccount = (a, audPerUsd) => ({
+  ...a, startUsd: a.startAud / audPerUsd, cashAud: a.startAud, positions: [], closed: [],
+  stats: { n: 0, wins: 0, sumNet: 0 }, blocked: { cost: 0, quote: 0, limits: 0 }, lastBlocked: [],
+})
 
 // ---------------------------------------------------------------- rules
 const REGIMES = { any: 'any', quiet: 'after a quiet fortnight', loud: 'after a wild fortnight' }
@@ -152,11 +157,7 @@ export function newState(audPerUsd, now) {
   return {
     version: 1, created: now, lastRun: null, lastSignalDay: 0, lastCoach: 0, nextV: 1,
     rules: [], shadow: [], events: [], history: [],
-    accounts: Object.fromEntries(ACCOUNTS.map(a => [a.id, {
-      ...a, startUsd: a.startAud / audPerUsd, cashAud: a.startAud,  // cash is kept in AUD, like a real CoinSpot/Coinbase AUD wallet
-      positions: [], closed: [],
-      stats: { n: 0, wins: 0, sumNet: 0 }, blocked: { cost: 0, quote: 0, limits: 0 }, lastBlocked: [],
-    }])),
+    accounts: Object.fromEntries(ACCOUNTS.map(a => [a.id, freshAccount(a, audPerUsd)])),
   }
 }
 
@@ -235,6 +236,12 @@ export function step(state, market, now, S = LAB) {
   for (const a of Object.values(state.accounts)) if (a.cashAud == null) { a.cashAud = (a.cashUsd ?? a.startUsd) * a.startAud / a.startUsd; delete a.cashUsd }
   // an account that has never traded can only ever have been worth its start (clears the old FX blip)
   for (const acct of Object.values(state.accounts)) if (!acct.stats.n && !acct.positions.length) for (const h of state.history) if (h[acct.id] != null) h[acct.id] = acct.startAud
+  // accounts are named by exchange; add any new exchange, and keep fee/labels in step with ACCOUNTS
+  for (const cfg of ACCOUNTS) {
+    const acct = state.accounts[cfg.id]
+    if (!acct) { state.accounts[cfg.id] = freshAccount(cfg, rate); push(state.events, { t: now, kind: 'note', text: `${cfg.exchange} account added, starting with A$${cfg.startAud.toLocaleString()}.` }, 300); continue }
+    Object.assign(acct, { owner: cfg.owner, exchange: cfg.exchange, broker: cfg.broker, fee: cfg.fee, feeLabel: cfg.feeLabel })
+  }
   // if a starting amount was changed in ACCOUNTS, scale that account (cash, positions, history) to match
   for (const cfg of ACCOUNTS) {
     const acct = state.accounts[cfg.id]
@@ -314,6 +321,7 @@ function enter(a, r, base, p, sp, market, now, S, log) {
   if (a.positions.some(x => x.base === base)) return
   const spread = market.quotes?.[a.id]?.[base]
   if (!(spread >= 0)) { a.blocked.quote++; note(`no live ${a.exchange} quote for ${base}`); return }
+  const estimated = !!market.estimated?.[a.id]?.[base]
   const cost = 2 * a.fee + spread + 2 * S.slippage
   const est = estimate(r.all)
   if (!(est > cost + S.margin)) {
@@ -329,8 +337,8 @@ function enter(a, r, base, p, sp, market, now, S, log) {
   const fill = p * (1 + spread / 2 + S.slippage)
   const units = alloc * (1 - a.fee) / fill
   a.cashAud -= alloc * market.audPerUsd
-  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT: now + r.spec.H * DAY, spread, est, cost })
-  log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; estimate ${pct(est)} vs cost ${pct(cost)}).`)
+  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT: now + r.spec.H * DAY, spread, est, cost, estimated })
+  log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; estimate ${pct(est)} vs cost ${pct(cost)}${estimated ? `, spread estimated at ${pct(spread)} because ${base} isn't in ${a.exchange}'s public price feed` : ''}).`)
 }
 
 /** The morning summary: balances, win rates and the latest rule changes. */

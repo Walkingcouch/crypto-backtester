@@ -114,10 +114,20 @@ export function backtestPicks(data, fee, S = SETTINGS, startIndex) {
 
   function run(decide, every) {
     let cash = 1, units = new Float64Array(data.coins.length)
+    const last = new Float64Array(data.coins.length)
     const eq = [], days = [], exposure = []
-    let pending = null, trades = 0, feesPaid = 0
+    let pending = null, trades = 0, feesPaid = 0, delistings = 0
     for (let i = start; i < D; i++) {
       const px = k => data.coins[k].close[i]
+      // a coin we hold has stopped trading (delisted): sell at its last price
+      for (let k = 0; k < units.length; k++) {
+        const p = px(k)
+        if (!nan(p)) { last[k] = p; continue }
+        if (units[k] > 0 && last[k] > 0) {
+          const v = units[k] * last[k], c = v * cost
+          cash += v - c; feesPaid += c; trades++; delistings++; units[k] = 0
+        }
+      }
       if (pending) {         // execute yesterday's decision at today's close
         let value = cash
         for (let k = 0; k < units.length; k++) if (units[k]) value += units[k] * (nan(px(k)) ? 0 : px(k))
@@ -146,7 +156,7 @@ export function backtestPicks(data, fee, S = SETTINGS, startIndex) {
       eq.push(value); days.push(data.days[i]); exposure.push(value > 0 ? held / value : 0)
       if ((i - start) % every === 0 && i < D - 1) pending = decide(i)
     }
-    return { eq, days, exposure, trades, feesPaid, metrics: metrics(eq, days) }
+    return { eq, days, exposure, trades, feesPaid, delistings, metrics: metrics(eq, days) }
   }
 
   const strategy = run(i => {

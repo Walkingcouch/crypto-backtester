@@ -43,6 +43,22 @@ async function coinspotSpreads() {
   return out
 }
 
+async function binanceSpreads() {
+  const out = {}
+  try {
+    for (const t of await getJSON(`${API}/ticker/bookTicker`)) {
+      if (!t.symbol.endsWith('USDT')) continue
+      const bid = +t.bidPrice, ask = +t.askPrice
+      if (bid > 0 && ask >= bid) out[t.symbol.slice(0, -4)] = (ask - bid) / ((ask + bid) / 2)
+    }
+  } catch { /* */ }
+  return out
+}
+
+// CoinSpot lists many more coins than its public price feed covers (e.g. PEPE), so for a
+// scanned coin missing from the feed the Lab assumes a cautious 1% spread and labels it.
+const COINSPOT_EST_SPREAD = 0.01
+
 async function coinbaseSpreads(bases) {
   const out = {}
   await Promise.all(bases.map(async b => {
@@ -79,16 +95,17 @@ export default async function handler(req, res) {
     for (const s of saved?.shadow || []) held.add(s.base)
     const want = [...new Set([...universe, ...held])]
 
-    const [rate, cs, cb, coins] = await Promise.all([
-      audPerUsd(), coinspotSpreads(), coinbaseSpreads(want),
+    const [rate, cs, cb, bn, coins] = await Promise.all([
+      audPerUsd(), coinspotSpreads(), coinbaseSpreads(want), binanceSpreads(),
       Promise.all(want.map(b => bars(b).catch(() => null))),
     ])
     const live = {}
     for (const t of tickers) if (t.symbol.endsWith('USDT')) live[t.symbol.slice(0, -4)] = +t.lastPrice
     const market = {
       coins: coins.filter(c => c && c.c.length > 250 && universe.includes(c.base)), live, audPerUsd: rate,
-      quotes: { john: cs, mark: cb },
+      quotes: { john: { ...cs }, mark: cb, binance: bn }, estimated: { john: {} },
     }
+    for (const c of market.coins) if (market.quotes.john[c.base] == null) { market.quotes.john[c.base] = COINSPOT_EST_SPREAD; market.estimated.john[c.base] = true }
     const now = Date.now()
     const state = step(saved ? structuredClone(saved) : newState(rate, now), market, now)
     if (!dry) saved = await rpc('lab_put', { sid: 'main', payload: state })
@@ -96,7 +113,7 @@ export default async function handler(req, res) {
     res.setHeader('cache-control', dry ? 'public, s-maxage=1800, stale-while-revalidate=7200' : 'no-store')
     res.status(200).send(JSON.stringify({
       dry, saved: dry ? null : saved, ms: Date.now() - t0, summary: summary(state),
-      quotes: { coinspot: Object.keys(cs).length, coinbase: Object.keys(cb).length }, state,
+      quotes: { coinspot: Object.keys(cs).length, coinbase: Object.keys(cb).length, binance: Object.keys(bn).length }, state,
     }))
   } catch (e) {
     res.status(500).json({ error: String(e && e.message || e) })

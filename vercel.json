@@ -13,10 +13,13 @@
       "maxDuration": 30
     },
     "api/picks.js": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "api/lab-cron.js": {
       "maxDuration": 120
+    },
+    "api/delisted.js": {
+      "maxDuration": 300
     }
   }
 }

@@ -30,7 +30,7 @@ async function history(symbol) {
 
 function thin(run, every = 7) {
   const keep = (_, i, a) => i % every === 0 || i === a.length - 1
-  return { days: run.days.filter(keep), eq: run.eq.filter(keep).map(x => +x.toFixed(5)), metrics: run.metrics, trades: run.trades, feesPaid: run.feesPaid, avgExposure: run.avgExposure }
+  return { days: run.days.filter(keep), eq: run.eq.filter(keep).map(x => +x.toFixed(5)), metrics: run.metrics, trades: run.trades, feesPaid: run.feesPaid, avgExposure: run.avgExposure, delistings: run.delistings }
 }
 
 export default async function handler(req, res) {
@@ -51,6 +51,16 @@ export default async function handler(req, res) {
       }))
       series.push(...batch.filter(Boolean))
     }
+    // optional: add back coins that were delisted (survivorship-bias check)
+    const q = new URL(req.url, 'http://x').searchParams
+    let delisted = []
+    if (q.get('delisted') === '1') {
+      const host = req.headers['x-forwarded-host'] || req.headers.host
+      const r = await fetch(`https://${host}/api/delisted`)
+      if (!r.ok) throw new Error(`delisted coins unavailable (${r.status})`)
+      const d = await r.json()
+      for (const c of d.coins || []) if (!series.some(s => s.base === c.base)) { series.push({ base: c.base, rows: c.rows }); delisted.push({ base: c.base, from: c.from, to: c.to }) }
+    }
     // align on a common daily calendar
     const first = Math.min(...series.map(s => s.rows[0]?.[0] ?? Infinity))
     const last = Math.max(...series.map(s => s.rows[s.rows.length - 1]?.[0] ?? 0))
@@ -60,11 +70,11 @@ export default async function handler(req, res) {
     const coins = series.filter(s => s.rows.length).map(s => {
       const close = new Array(days.length).fill(NaN), qv = new Array(days.length).fill(NaN)
       for (const [t, c, v] of s.rows) { const i = pos.get(t); if (i != null) { close[i] = c; qv[i] = v } }
-      for (let i = 1; i < days.length; i++) if (!Number.isFinite(close[i]) && Number.isFinite(close[i - 1]) && i > 0) {
-        // fill rare single-day gaps (exchange outages) with the previous close
-        const firstSeen = close.findIndex(Number.isFinite)
-        if (firstSeen >= 0 && i > firstSeen) close[i] = close[i - 1]
-      }
+      // fill rare gaps (exchange outages) with the previous close, but never past a coin's last
+      // real price: after that it has been delisted and stays empty
+      let lastSeen = -1
+      for (let i = days.length - 1; i >= 0; i--) if (Number.isFinite(close[i])) { lastSeen = i; break }
+      for (let i = 1; i < lastSeen; i++) if (!Number.isFinite(close[i]) && Number.isFinite(close[i - 1])) close[i] = close[i - 1]
       return { base: s.base, close, qv }
     })
     const data = { days, coins }
@@ -77,16 +87,16 @@ export default async function handler(req, res) {
     })
     res.setHeader('content-type', 'application/json')
     res.setHeader('cache-control', 'public, s-maxage=21600, stale-while-revalidate=86400')
-    if (new URL(req.url, 'http://x').searchParams.get('summary') === '1') {
+    if (q.get('summary') === '1') {
       return res.status(200).send(JSON.stringify({
-        asOf: new Date(days[n]).toISOString().slice(0, 10), coinsChecked: coins.length, ms: Date.now() - t0, cash: now.cash,
+        asOf: new Date(days[n]).toISOString().slice(0, 10), coinsChecked: coins.length, delisted, ms: Date.now() - t0, cash: now.cash,
         picks: now.universe.map(a => `${a.base} ${a.verdict} ${(a.weight * 100).toFixed(1)}% ${a.checks}/${a.of} vol${(a.vol * 100).toFixed(0)}%`),
         tests: tests.map(t => ({ fee: t.fee, from: new Date(t.start).toISOString().slice(0, 10),
           picks: t.strategy.metrics, exposure: t.strategy.avgExposure, trades: t.strategy.trades, btc: t.btc.metrics, basket: t.basket.metrics })),
       }))
     }
     res.status(200).send(JSON.stringify({
-      updated: new Date().toISOString(), asOf: days[n], settings: SETTINGS, coinsChecked: coins.length,
+      updated: new Date().toISOString(), asOf: days[n], settings: SETTINGS, coinsChecked: coins.length, delisted,
       now, prev: { day: prev.day, weights: Object.fromEntries(prev.universe.filter(a => a.weight > 0).map(a => [a.base, a.weight])) },
       tests, ms: Date.now() - t0,
     }))

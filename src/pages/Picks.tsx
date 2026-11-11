@@ -7,9 +7,10 @@ import { BROKERS, useBroker, useListings } from '../lib/brokers'
 import { curSymbol, fmtMoney, nowRate, useCurrency } from '../lib/currency'
 import type { CoinView, Metrics, PickSettings } from '../lib/picks'
 
-interface Thin { days: number[]; eq: number[]; metrics: Metrics | null; trades: number; feesPaid: number; avgExposure?: number }
+interface Thin { days: number[]; eq: number[]; metrics: Metrics | null; trades: number; feesPaid: number; avgExposure?: number; delistings?: number }
 interface PicksResponse {
   updated: string; asOf: number; settings: PickSettings; coinsChecked: number
+  delisted?: { base: string; from: string; to: string }[]
   now: { day: number; cash: number; universe: (CoinView & { verdict: 'buy' | 'hold' | 'avoid'; weight: number })[] }
   prev: { day: number; weights: Record<string, number> }
   tests: { fee: number; start: number; strategy: Thin; btc: Thin; basket: Thin }[]
@@ -37,11 +38,14 @@ export default function Picks() {
   const { cur, live } = useCurrency()
   const rate = nowRate(cur, live) ?? 1
   const { listings, where } = useListings()
+  const [withDelisted, setWithDelisted] = useState(() => { try { return localStorage.getItem('cb.delisted') === '1' } catch { return false } })
 
   useEffect(() => {
-    fetch('/api/picks').then(r => r.json()).then(j => { if (j.error) throw new Error(j.error); setData(j) })
+    setData(null); setError(null)
+    try { localStorage.setItem('cb.delisted', withDelisted ? '1' : '0') } catch { /* */ }
+    fetch(withDelisted ? '/api/picks?delisted=1' : '/api/picks').then(r => r.json()).then(j => { if (j.error) throw new Error(j.error); setData(j) })
       .catch(e => setError(`Couldn't load recommendations: ${e.message || e}`))
-  }, [])
+  }, [withDelisted])
   useEffect(() => { try { localStorage.setItem('cb.budget', String(budget)) } catch { /* */ } }, [budget])
 
   const test = useMemo(() => data?.tests.reduce((best, t) => (Math.abs(t.fee * 100 - feePct) < Math.abs(best.fee * 100 - feePct) ? t : best), data.tests[0]), [data, feePct])
@@ -163,11 +167,22 @@ export default function Picks() {
                   <tr><td>Trades</td><td>{test.strategy.trades.toLocaleString()}</td><td>{test.btc.trades}</td><td>{test.basket.trades}</td></tr>
                 </tbody>
               </table></div>
-              <div className="notice warn small" style={{ marginTop: 12 }}>
+              <label className="toggle-row">
+                <input type="checkbox" checked={withDelisted} onChange={e => setWithDelisted(e.target.checked)} />
+                <span><b>Include coins that were later delisted</b> <span className="muted small">(crashed, shut down or renamed: LUNA, FTT, MATIC and others, from Binance's archive). If the rules held one when it stopped trading, it's sold at its last price.</span></span>
+              </label>
+              {withDelisted && data.delisted && (
+                <div className="notice info small" style={{ marginTop: 8 }}>
+                  Added {data.delisted.length} delisted coin{data.delisted.length === 1 ? '' : 's'}: {data.delisted.map(d => d.base).join(', ')}.
+                  {' '}{test.strategy.delistings ? `The picks were holding a coin when it was delisted ${test.strategy.delistings} time${test.strategy.delistings === 1 ? '' : 's'}.` : 'The picks never held a coin at the moment it was delisted.'}
+                  {' '}Compare with the toggle off to see how much survivorship bias flattered the result.
+                </div>
+              )}
+              {!withDelisted && <div className="notice warn small" style={{ marginTop: 12 }}>
                 <b>Why the real result would likely be worse:</b> this test only includes coins that still trade today. Coins that collapsed and were delisted
                 (which the rules might have bought) are missing, so the history looks rosier than reality ("survivorship bias"). Treat it as a rough guide, and
                 watch how the picks do from here on.
-              </div>
+              </div>}
             </section>
           )}
 

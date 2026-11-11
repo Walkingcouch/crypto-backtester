@@ -6,7 +6,7 @@ export interface LabRule {
   live?: { trades: { t: number; base: string; g: number }[] }
 }
 export interface Found { id: string; text: string; H: number; pass: boolean; train: Stats; valid: Stats; all: Stats }
-export interface Position { base: string; v: number; units: number; entryPx: number; fillPx: number; costUsd: number; t: number; stop: number; exitT: number; spread: number; est: number; cost: number }
+export interface Position { base: string; v: number; units: number; entryPx: number; fillPx: number; costUsd: number; t: number; stop: number; exitT: number; spread: number; est: number; cost: number; estimated?: boolean }
 export interface Closed extends Position { exitPx: number; net: number; gross: number; why: 'stop' | 'time' }
 export interface Account {
   id: string; owner: string; broker: string; exchange: string; fee: number; feeLabel: string; startAud: number

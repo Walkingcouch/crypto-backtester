@@ -10,7 +10,7 @@ const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '�
 const when = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 const cls = (x: number) => (x > 0 ? 'pos' : x < 0 ? 'neg' : '')
 const KIND: Record<string, string> = { promote: 'Promoted', rollback: 'Rolled back', challenger: 'New challenger', retire: 'Retired', trade: 'Trade', note: 'Note' }
-const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8' }
+const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8', binance: '#d99a1e' }
 
 function liveRecord(r: LabRule) {
   const g = (r.live?.trades ?? []).map(t => t.g)
@@ -79,8 +79,8 @@ export default function Lab() {
       <div className="page-head">
         <h1>Lab</h1>
         <p>A paper-trading bot that finds its own buying rules, tests them on results, promotes the better ones and rolls back the
-          worse ones. It runs by itself every 5 hours with pretend money: one account on CoinSpot fees (John) and one on Coinbase
-          fees (Mark), so you can see what costs do to the same rule.</p>
+          worse ones. It runs by itself every 5 hours with pretend money: three A$1,000 accounts, one each on CoinSpot, Coinbase Advanced
+          and Binance fees, all following the same rule, so you can see what each exchange's costs do to it.</p>
         <div className="notice info small">Paper money only. Nothing here places real orders. It's a way to see whether a rule earns its keep after costs before any real money goes near it.</div>
       </div>
 
@@ -100,7 +100,7 @@ export default function Lab() {
                 const v = a.valueAud ?? a.startAud
                 return (
                   <div className="kpi" key={a.id}>
-                    <div className="label"><span className="dot" style={{ background: COLORS[a.id] }} /> {a.owner} · {a.exchange}</div>
+                    <div className="label"><span className="dot" style={{ background: COLORS[a.id] }} /> {a.exchange}</div>
                     <div className="value">{money(v)}</div>
                     <div className={`sub ${cls(v / a.startAud - 1)}`}>{pct(v / a.startAud - 1)} since start ({money(a.startAud)})</div>
                     <div className="sub">{a.stats.n} closed trade{a.stats.n === 1 ? '' : 's'}{a.stats.n ? ` · won ${pct0(a.stats.wins / a.stats.n)}` : ''} · {a.positions.length} open</div>
@@ -132,7 +132,7 @@ export default function Lab() {
           <section className="card">
             <h2>The cost gate <Info>Mark's rule: only open a position when the conservative estimate of its gain beats the full cost of buying and selling plus a safety margin. The estimate is the average result of every past signal of this rule, losers included, minus a margin for luck (one standard error). Stop-losses always execute, even at a loss.</Info></h2>
             <div className="table-wrap"><table className="record">
-              <thead><tr><th></th>{accts.map(a => <th key={a.id}>{a.owner} · {a.exchange}</th>)}</tr></thead>
+              <thead><tr><th></th>{accts.map(a => <th key={a.id}>{a.exchange}</th>)}</tr></thead>
               <tbody>
                 <tr><td>Fee each way</td>{accts.map(a => <td key={a.id}>{a.feeLabel}</td>)}</tr>
                 <tr><td>Round trip <Info>Fee in and out, plus the gap between buy and sell prices (spread, from the exchange's live quote), plus {pct(LAB.slippage)} slippage each way.</Info></td>
@@ -146,7 +146,7 @@ export default function Lab() {
               </tbody>
             </table></div>
             {accts.some(a => a.lastBlocked.length) && <Disclosure title="Recently skipped signals">
-              <ul className="lab-events">{accts.flatMap(a => a.lastBlocked.slice(-5).reverse().map((b, i) => <li key={a.id + i}><b>{a.owner}</b> skipped {b.base}: {b.why} <span className="muted small">{when(b.t)}</span></li>))}</ul>
+              <ul className="lab-events">{accts.flatMap(a => a.lastBlocked.slice(-5).reverse().map((b, i) => <li key={a.id + i}><b>{a.exchange}</b> skipped {b.base}: {b.why} <span className="muted small">{when(b.t)}</span></li>))}</ul>
             </Disclosure>}
           </section>
 
@@ -154,7 +154,7 @@ export default function Lab() {
             <h2>Positions</h2>
             {accts.map(a => (
               <div key={a.id} style={{ marginBottom: 14 }}>
-                <h3>{a.owner} · cash {money(a.cashAud)}</h3>
+                <h3>{a.exchange} · cash {money(a.cashAud)}</h3>
                 {a.positions.length ? <div className="table-wrap"><table className="record">
                   <thead><tr><th>Coin</th><th>Size</th><th>Bought</th><th>Stop</th><th>Sell by</th><th>Rule</th></tr></thead>
                   <tbody>{a.positions.map(p => (
@@ -196,7 +196,7 @@ export default function Lab() {
               <li><b>Find rules:</b> once a week it tests {state.found?.length ?? 39} candidate rules (breakouts after quiet or wild fortnights, dips in uptrends, surges, crashes) on about 2½ years of daily prices for the 20 most-traded coins.</li>
               <li><b>Check them honestly:</b> a rule must make money after costs on the older data <i>and</i> on the last {LAB.validDays} days it was never chosen on.</li>
               <li><b>Trade the best one</b> on paper. Every 5 hours it checks stop-losses and time limits; after each daily close it looks for new signals.</li>
-              <li><b>Cost gate</b> (Mark's rule): skip any entry whose conservative gain estimate doesn't beat fees, spread, slippage and a {pct(LAB.margin)} margin. If there's no live quote from the exchange, it skips too.</li>
+              <li><b>Cost gate</b> (Mark's rule): skip any entry whose conservative gain estimate doesn't beat fees, spread, slippage and a {pct(LAB.margin)} margin. If there's no live quote from the exchange, it skips too. The exception is CoinSpot: it lists far more coins than its public price feed shows (PEPE, for example), so for those the Lab assumes a cautious 1% spread and says so in the trade log.</li>
               <li><b>Challengers in the shadow:</b> up to {LAB.maxChallengers} other rules trade on paper alongside. They're judged on batches of {LAB.promoteAfter}+ trades, never one loss, and the previous rule is kept so a worse replacement gets rolled back.</li>
               <li><b>Fixed risk limits</b> the bot can't change: at most {pct0(LAB.maxPosition)} of an account per coin, a stop-loss costs at most about {pct0(LAB.riskPerTrade)} of the account, at most {LAB.maxOpen} positions, and at least {pct0(1 - LAB.maxInvested)} in cash.</li>
             </ol>
