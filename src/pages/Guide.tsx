@@ -85,6 +85,7 @@ export default function Guide() {
           <li><b>Size by wildness:</b> calmer coins get bigger shares, wild ones smaller, never more than 20% (Kaya &amp; Mostowfi, 2022). Whatever isn't needed stays in cash, so in a falling market most of the budget sits out.</li>
           <li><b>Weekly review,</b> skipping tiny changes to save fees. No one-day signals, because one-day jumps in small coins tend to reverse (Zaremba et al., 2021).</li>
         </ul>
+        <p><b>Selling and stop-losses:</b> Picks has no fixed stop-loss. Its exit is the weekly check: when a coin's trend breaks it leaves the list and you sell it. Each pick shows an optional stop-loss level (about 2.5 typical weekly moves below today's price) you can set yourself; the track record doesn't use it.</p>
         <p>The page shows the suggested mix for your budget, what changed since last week, coins to watch or avoid, and a <b>track record</b>: following the picks week by week since 2019, with your exchange's fee, compared with just holding Bitcoin and with a top-10 basket. That history only includes coins that still trade today, so it flatters every strategy. Coins that collapsed and were delisted are missing ("survivorship bias"). These are rules-based suggestions for your own research, not personal financial advice.</p>
 
         <h2 id="lab">Lab (self-improving paper trading)</h2>
@@ -94,6 +95,7 @@ export default function Guide() {
           <li><b>Cost gate.</b> It only buys when a cautious estimate of the gain (every past signal of that rule, losers included, minus a margin for luck) beats the fees, the exchange's live buy/sell spread, slippage and a 0.3% safety margin. Stop-losses always run, even at a loss. With no live quote from the exchange, it skips, except on CoinSpot, whose public price feed leaves out many coins it lists; there it assumes a cautious 1% spread and labels the trade.</li>
           <li><b>Challengers and rollback.</b> Up to three other rules trade "in the shadow". One replaces the current rule only when its own live record is better over at least 12 trades. The old rule stays in the shadow, so if the new one does worse it's rolled back automatically. One losing trade never changes anything: that's mostly luck.</li>
           <li><b>Fixed risk limits</b> the bot can't change: at most 10% of an account per coin, a stop-loss costs at most about 1% of the account, at most 8 open positions, and at least 40% in cash.</li>
+          <li><b>Stop-losses:</b> every trade gets one when it's bought, about 2.5 times the coin's typical move over the holding period, between 5% and 25% below the buy price. It's never moved. It's checked every 5 hours, so in a crash the sale can land a little below it. If it isn't hit, the coin is sold when the rule's holding period ends.</li>
           <li><b>Morning summary</b> at the top of the page: both balances, win rates and the latest rule changes.</li>
         </ul>
         <p>Expect the Coinbase account to trade far less: at 1.2% each way the gate blocks most signals. That's the point of the gate. Judge the Lab on months of results, not days.</p>

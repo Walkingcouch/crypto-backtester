@@ -4,7 +4,7 @@ import { Info } from './Info'
 import type { Cur } from '../lib/currency'
 
 export const EXPLAIN = {
-  sharpe: 'Return per unit of bumpiness, per year. Higher is better. Around 1 or more is good for a simple strategy; holding crypto is often 0.5–1.2.',
+  sharpe: 'How much return you got for the ups and downs you had to sit through (the Sharpe ratio): yearly return ÷ yearly bumpiness. Two strategies that both make 40% a year: the smoother one scores higher. Under 0.3 poor · 0.3–0.7 weak · 0.7–1.2 decent · 1.2+ strong. Holding Bitcoin has usually scored about 0.5–1.',
   drawdown: 'The biggest fall from a high point to a low before recovering. Ask yourself: could I sit through this without panic-selling?',
   trades: 'Each buy or sell. More trades means more fees eating into returns.',
   winRate: 'Share of complete buy→sell rounds that made money. Trend strategies often win less than half the time but win big on a few.',
@@ -53,7 +53,28 @@ export function Headline({ m, bench, cash, cur }: { m: Metrics; bench: Metrics; 
           <div className="stat-value">{m.trades}</div>
           <div className="stat-sub">{money(m.feesPaid, cur)} in fees</div>
         </div>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <ScoreScale marks={[{ label: 'Strategy', value: m.sharpe, color: 'var(--accent)' }, { label: 'Holding', value: bench.sharpe, color: 'var(--bench)' }]} />
+        </div>
       </div>
+    </div>
+  )
+}
+
+/** A labelled 0–2 scale showing where one or more risk-adjusted scores sit. */
+export function ScoreScale({ marks }: { marks: { label: string; value: number; color?: string }[] }) {
+  const MAX = 2
+  const x = (v: number) => `${Math.max(0, Math.min(1, v / MAX)) * 100}%`
+  const bands = [{ to: 0.3, t: 'Poor', c: 'var(--neg-soft)' }, { to: 0.7, t: 'Weak', c: 'var(--warn-soft)' }, { to: 1.2, t: 'Decent', c: 'var(--accent-soft)' }, { to: MAX, t: 'Strong', c: 'color-mix(in srgb, var(--accent) 28%, var(--surface))' }]
+  let from = 0
+  return (
+    <div className="score-scale">
+      <div className="score-bar">
+        {bands.map(b => { const w = (b.to - from) / MAX * 100; from = b.to; return <div key={b.t} style={{ width: `${w}%`, background: b.c }}><span>{b.t}</span></div> })}
+        {marks.map(m => <div key={m.label} className="score-mark" style={{ left: x(m.value), borderColor: m.color || 'var(--text)' }} title={`${m.label}: ${m.value.toFixed(2)}`} />)}
+      </div>
+      <div className="score-ticks"><span>0</span><span style={{ left: '15%' }}>0.3</span><span style={{ left: '35%' }}>0.7</span><span style={{ left: '60%' }}>1.2</span><span style={{ left: '100%' }}>2+</span></div>
+      <div className="score-legend">{marks.map(m => <span key={m.label}><i style={{ background: m.color || 'var(--text)' }} />{m.label} <b>{m.value.toFixed(2)}</b> ({scoreLabel(m.value).text.toLowerCase()})</span>)}</div>
     </div>
   )
 }

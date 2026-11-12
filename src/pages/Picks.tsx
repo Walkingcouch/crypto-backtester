@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import EquityChart from '../components/EquityChart'
+import { ScoreScale, scoreLabel } from '../components/Metrics'
+import { fmtPrice } from '../lib/markets'
 import { Info } from '../components/Info'
 import WhereToBuy from '../components/WhereToBuy'
 import { BROKERS, useBroker, useListings } from '../lib/brokers'
@@ -18,6 +20,8 @@ interface PicksResponse {
 
 const pct = (x: number, d = 0) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
 const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
+/** Optional stop-loss for a weekly-checked position: ~2.5 typical weekly moves, 5–25%. */
+const stopFor = (annualVol: number) => Math.max(0.05, Math.min(0.25, 2.5 * annualVol / Math.sqrt(365) * Math.sqrt(7)))
 const color = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim()
 
 const SOURCES = [
@@ -79,9 +83,14 @@ export default function Picks() {
     <main className="page narrow">
       <div className="page-head">
         <h1>Picks</h1>
-        <p>What the research-based rules suggest right now: which coins to hold, how much of each for your budget, and how
-          following these suggestions would have gone in the past.</p>
-        <div className="notice info small">Rules-based suggestions for your own research, not personal financial advice. The rules are fixed from published studies (sources at the bottom) and weren't tuned to make the history look good.</div>
+        <p>A weekly shopping list. It checks the 20 most-traded coins, picks the ones in a clear uptrend, and says how much of your
+          budget to put in each. Everything else stays in cash. It's a different strategy from Mark's original backtest (the Test page) and from the Lab bot.</p>
+        <div className="howto">
+          <div><span className="n">1</span><b>Buy what's listed</b>Put the amounts shown into each coin. The rest of your budget stays in cash or a stablecoin.</div>
+          <div><span className="n">2</span><b>Check once a week</b>Come back weekly. Amounts change a little as trends strengthen or weaken. Changes under 2% of your budget aren't worth the fees.</div>
+          <div><span className="n">3</span><b>Sell what drops off</b>When a coin's trend breaks it leaves the list: sell it at that week's check. That's the strategy's exit; it has no fixed stop-loss (more below).</div>
+        </div>
+        <div className="notice info small" style={{ marginTop: 12 }}>Rules-based suggestions for your own research, not personal financial advice. The rules are fixed from published studies (sources at the bottom) and weren't tuned to make the history look good.</div>
       </div>
 
       <section className="card">
@@ -119,6 +128,7 @@ export default function Picks() {
                       <span className="tag green">Uptrend on {a.checks} of {a.of} checks</span>
                       <span className="tag">{pct(a.r30)} in 30 days</span>
                       <span className="tag">Volatility {pct0(a.vol)}{a.vol > 1 ? ' (wild)' : a.vol < 0.6 ? ' (calmer)' : ''}</span>
+                      <span className="tag red" title="Optional safety net: about 2.5 typical weekly moves below today's price">Optional stop {pct(-stopFor(a.vol), 0)} · {curSymbol(cur)}{fmtPrice(a.price * rate * (1 - stopFor(a.vol)))}</span>
                     </div>
                   </div>
                   <div className="pick-amt">
@@ -162,11 +172,21 @@ export default function Picks() {
                   <tr><td>{money(budget)} became</td><td><b>{money(budget * s.multiple)}</b></td><td>{money(budget * b.multiple)}</td><td>{money(budget * k.multiple)}</td></tr>
                   <tr><td>Yearly return</td><td>{pct(s.cagr)}</td><td>{pct(b.cagr)}</td><td>{pct(k.cagr)}</td></tr>
                   <tr><td>Worst drop <Info>The biggest fall from a high point along the way.</Info></td><td className="neg">{pct0(s.maxDrawdown)}</td><td className="neg">{pct0(b.maxDrawdown)}</td><td className="neg">{pct0(k.maxDrawdown)}</td></tr>
-                  <tr><td>Risk-adjusted score</td><td>{s.sharpe.toFixed(2)}</td><td>{b.sharpe.toFixed(2)}</td><td>{k.sharpe.toFixed(2)}</td></tr>
+                  <tr><td>Risk-adjusted score <Info>Return for the ups and downs you sit through (Sharpe ratio). Explained under the table.</Info></td>{[s, b, k].map((m, i) => <td key={i}>{m.sharpe.toFixed(2)} <span className={`tag ${scoreLabel(m.sharpe).cls}`}>{scoreLabel(m.sharpe).text}</span></td>)}</tr>
                   <tr><td>Time invested</td><td>{pct0(test.strategy.avgExposure ?? NaN)}</td><td>100%</td><td>100%</td></tr>
                   <tr><td>Trades</td><td>{test.strategy.trades.toLocaleString()}</td><td>{test.btc.trades}</td><td>{test.basket.trades}</td></tr>
                 </tbody>
               </table></div>
+              <div className="explain-box">
+                <h3>Reading these numbers</h3>
+                <ul>
+                  <li><b>{money(budget)} became</b> and <b>yearly return</b>: what following each approach would have turned your budget into.</li>
+                  <li><b>Worst drop</b>: the biggest fall from a high point along the way. The real test is whether you could sit through it without panic-selling.</li>
+                  <li><b>Risk-adjusted score</b> (Sharpe ratio): yearly return divided by how much the value jumped around. Two strategies that both make 40% a year: the smoother one scores higher. Below 0.3 is poor, 0.3–0.7 weak, 0.7–1.2 decent, above 1.2 strong.</li>
+                  <li><b>Time invested</b>: how much of the time money was actually in coins. Picks sits in cash a lot, which is why its falls are smaller.</li>
+                </ul>
+                <ScoreScale marks={[{ label: 'Picks', value: s.sharpe, color: color('--accent') }, { label: 'Just Bitcoin', value: b.sharpe, color: color('--bench') }, { label: 'Top-10 basket', value: k.sharpe, color: '#3b6fd8' }]} />
+              </div>
               <label className="toggle-row">
                 <input type="checkbox" checked={withDelisted} onChange={e => setWithDelisted(e.target.checked)} />
                 <span><b>Include coins that crashed or were delisted</b> <span className="muted small">(about 90 coins such as old LUNA, FTT, MATIC, XMR and WAVES that were once heavily traded but have since collapsed, been delisted or renamed, so today's top-50 misses them). If the rules held one when it stopped trading, it's sold at its last price.</span></span>
@@ -194,6 +214,12 @@ export default function Picks() {
               <li><b>Size by wildness:</b> each coin's share is set so it adds about the same risk. Calmer coins get more, wild coins less, never more than {pct0(data.settings.maxWeight)}. Whatever isn't needed stays in cash.</li>
               <li><b>Weekly review:</b> changes smaller than {pct0(data.settings.minTrade)} of your budget are skipped to save fees.</li>
             </ol>
+            <h3>When to sell, and stop-losses</h3>
+            <ul className="how-list">
+              <li><b>The built-in exit is the weekly check.</b> When fewer than {Math.round(data.settings.buyScore * 8)} of the 8 trend checks are positive, the coin drops off the list and you sell it. In a crash that usually happens within a week or two, but between checks nothing protects you.</li>
+              <li><b>Optional stop-loss.</b> Each pick shows a suggested stop: about 2.5 times the coin's typical weekly move below today's price (between 5% and 25%), so normal wobbles don't trigger it. If your exchange offers stop-loss orders you can set it there; otherwise use a price alert and sell by hand.</li>
+              <li><b>Trade-off:</b> the track record above does <i>not</i> use stop-losses. Stops limit a sudden crash but sometimes sell right before a rebound, so they can lower returns as well as risk.</li>
+            </ul>
             <h3>The research behind it</h3>
             <ul className="sources">
               {SOURCES.map(x => <li key={x.u}><a href={x.u} target="_blank" rel="noreferrer noopener">{x.t}</a><span className="muted small"> — {x.why}</span></li>)}

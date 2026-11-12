@@ -9,6 +9,7 @@ import { fmtPrice } from '../lib/markets'
 const pct = (x: number, d = 1) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
 const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
 const when = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+const day = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 const cls = (x: number) => (x > 0 ? 'pos' : x < 0 ? 'neg' : '')
 const KIND: Record<string, string> = { promote: 'Promoted', rollback: 'Rolled back', challenger: 'New challenger', retire: 'Retired', trade: 'Trade', note: 'Note' }
 const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8', binance: '#d99a1e' }
@@ -80,10 +81,13 @@ export default function Lab() {
     <main className="page narrow">
       <div className="page-head">
         <h1>Lab</h1>
-        <p>A paper-trading bot that finds its own buying rules, tests them on results, promotes the better ones and rolls back the
-          worse ones. It runs by itself every 5 hours with pretend money: three A$1,000 accounts, one each on CoinSpot, Coinbase Advanced
-          and Binance fees, all following the same rule, so you can see what each exchange's costs do to it.</p>
-        <div className="notice info small">Paper money only. Nothing here places real orders. It's a way to see whether a rule earns its keep after costs before any real money goes near it.</div>
+        <p>A paper-trading bot. It picks a buying rule that has worked in the past, trades it with pretend money, and swaps in a better rule
+          only when one proves itself. It runs on its own every 5 hours. Nothing here places real orders.</p>
+        <div className="howto">
+          <div><span className="n">1</span><b>Three accounts, one rule</b>A$1,000 each on CoinSpot, Coinbase Advanced and Binance. They trade the same signals, so differences come from each exchange's fees and coins.</div>
+          <div><span className="n">2</span><b>Only trades worth the cost</b>Mark's cost gate: it buys only when the expected gain beats the fees and price gap with room to spare.</div>
+          <div><span className="n">3</span><b>Every trade has an exit</b>A stop-loss below the buy price and a time limit. Whichever comes first sells the coin.</div>
+        </div>
       </div>
 
       {error && <div className="notice err">{error}</div>}
@@ -94,8 +98,8 @@ export default function Lab() {
         <>
           <section className="card">
             <div className="step-head">
-              <span className="step-badge">Morning summary{state.lastRun ? ` · last run ${when(state.lastRun)}` : ''}</span>
-              <h2>{champ ? 'Trading on paper' : 'No rule has earned a place yet: both accounts are in cash'}</h2>
+              <span className="step-badge">Summary{state.lastRun ? ` · updated ${when(state.lastRun)}` : ''}</span>
+              <h2>{champ ? 'How the paper accounts are doing' : 'No rule has earned a place yet: all accounts are in cash'}</h2>
             </div>
             <div className="kpis" style={{ gridTemplateColumns: `repeat(${accts.length}, minmax(0, 1fr))` }}>
               {accts.map(a => {
@@ -105,113 +109,131 @@ export default function Lab() {
                     <div className="label"><span className="dot" style={{ background: COLORS[a.id] }} /> {a.exchange}</div>
                     <div className="value">{money(v)}</div>
                     <div className={`sub ${cls(v / a.startAud - 1)}`}>{pct(v / a.startAud - 1)} since start ({money(a.startAud)})</div>
-                    <div className="sub">{a.stats.n} closed trade{a.stats.n === 1 ? '' : 's'}{a.stats.n ? ` · won ${pct0(a.stats.wins / a.stats.n)}` : ''} · {a.positions.length} open</div>
+                    <div className="sub">{a.positions.length ? `${a.positions.length} coin${a.positions.length === 1 ? '' : 's'} held` : 'All in cash'} · {a.stats.n} finished trade{a.stats.n === 1 ? '' : 's'}{a.stats.n ? `, ${pct0(a.stats.wins / a.stats.n)} won` : ''}</div>
                   </div>
                 )
               })}
             </div>
             <BalanceChart state={state} />
+            <p className="hint">The chart shows each account's change since it started. A flat line means it's sitting in cash, waiting for a signal worth the cost.</p>
+          </section>
+
+          <section className="card">
+            <h2>What it holds now</h2>
+            {accts.map(a => (
+              <div key={a.id} style={{ marginBottom: 14 }}>
+                <h3>{a.exchange} <span className="muted small">· cash {money(a.cashAud)}</span></h3>
+                {a.positions.length ? <div className="table-wrap"><table className="record">
+                  <thead><tr><th>Coin</th><th>Price: bought → now</th><th>Value: put in → now <Info>Now = what you'd get selling right now, after the exchange fee and price gap.</Info></th><th>Stop-loss <Info>If the price falls to this level, the bot sells. Set when bought and never moved.</Info></th><th>Sells by <Info>If the stop-loss hasn't been hit, the coin is sold at this time whatever the price.</Info></th></tr></thead>
+                  <tbody>{a.positions.map(p => {
+                    const now = state.prices?.[p.base]
+                    const worth = now ? p.units * now * (1 - p.spread / 2 - LAB.slippage) * (1 - a.fee) : NaN
+                    const room = now ? p.stop / now - 1 : NaN
+                    return (
+                    <tr key={p.base}><td><Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link><div className="muted small">{day(p.t)}</div></td>
+                      <td>{px(p.entryPx)} → {now ? px(now) : '–'}<div className={`small ${now ? cls(now / p.entryPx - 1) : ''}`}>{now ? pct(now / p.entryPx - 1) : ''}</div></td>
+                      <td>{moneyUsd(p.costUsd)} → {now ? moneyUsd(worth) : '–'}<div className={`small ${now ? cls(worth / p.costUsd - 1) : ''}`}>{now ? pct(worth / p.costUsd - 1) : ''}</div></td>
+                      <td><span className="neg">{px(p.stop)}</span><div className="muted small">{pct(p.stop / p.entryPx - 1, 0)}{Number.isFinite(room) ? ` · ${Math.round(Math.abs(room) * 100)}% away` : ''}</div></td>
+                      <td>{day(p.exitT)}</td></tr>
+                  )})}</tbody></table></div>
+                  : <p className="muted small">Nothing held: waiting for the next signal that clears the cost gate.</p>}
+                {a.closed.length > 0 && <Disclosure title={`Finished trades (${a.stats.n})`}>
+                  <div className="table-wrap"><table className="record">
+                    <thead><tr><th>Coin</th><th>Result after costs</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
+                    <tbody>{a.closed.slice().reverse().map((c, i) => (
+                      <tr key={i}><td><b>{c.base}</b></td><td className={cls(c.net)}>{pct(c.net)}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss hit' : 'Time limit'}</td><td>{when(c.exitT)}</td></tr>
+                    ))}</tbody></table></div>
+                </Disclosure>}
+              </div>
+            ))}
+            {trades.length > 0 && <Disclosure title="Trade log">
+              <ul className="lab-events">{trades.map((e, i) => <li key={i}>{e.text} <span className="muted small">{when(e.t)}</span></li>)}</ul>
+            </Disclosure>}
+          </section>
+
+          <section className="card">
+            <h2>Stop-loss and safety rules</h2>
+            <p className="muted small" style={{ marginTop: 0 }}>Fixed in the code. The bot can change which buying rule it uses, but never these.</p>
+            <div className="explain-box">
+              <h3>How the stop-loss is set</h3>
+              <ul>
+                <li><b>Distance:</b> about 2.5 times the coin's typical move over the holding period (using the last 20 days' daily swings, counting up to 10 days of holding). Calm coins get a tighter stop, wild coins a wider one, so ordinary wobbles don't trigger it.</li>
+                <li><b>Limits:</b> never closer than 5% or further than 25% below the buy price.</li>
+                <li><b>Fixed once set:</b> it isn't moved up or down while the coin is held (no trailing stop).</li>
+                <li><b>Checked every 5 hours.</b> In a sudden crash the price can fall past the stop between checks, so the sale can land below it (one test trade on INIT sold 26% down against a 25% stop).</li>
+                <li><b>Time limit:</b> if the stop isn't hit, the coin is sold when the rule's holding period ends ({champ ? `${champ.spec.H} days for the current rule` : 'set by the rule'}), win or lose.</li>
+              </ul>
+            </div>
+            <div className="explain-box">
+              <h3>Account limits</h3>
+              <ul>
+                <li><b>Size by the stop:</b> each position is sized so that hitting its stop-loses at most about {pct0(LAB.riskPerTrade)} of the account. A wide 25% stop means a small position (about 4%).</li>
+                <li>No more than <b>{pct0(LAB.maxPosition)}</b> of an account in one coin, at most <b>{LAB.maxOpen}</b> coins at once, and at least <b>{pct0(1 - LAB.maxInvested)}</b> always in cash.</li>
+              </ul>
+            </div>
+          </section>
+
+          <section className="card">
+            <h2>The rule it's using</h2>
+            {champ ? (
+              <RuleCard r={champ} title={`Current rule · v${champ.v}`} />
+            ) : <p className="muted">Each week the bot tests {state.found?.length ?? 39} candidate rules. None passed both checks this time, so it waits rather than trading a rule that only looked good by luck.</p>}
             {changes.length > 0 && (<>
               <h3>Latest rule changes</h3>
               <ul className="lab-events">{changes.map((e, i) => <li key={i}><span className="tag">{KIND[e.kind] ?? e.kind}</span> {e.text} <span className="muted small">{when(e.t)}</span></li>)}</ul>
             </>)}
-          </section>
-
-          <section className="card">
-            <h2>The rule book</h2>
-            {champ ? (
-              <RuleCard r={champ} title={`Trading now · v${champ.v}`} />
-            ) : <p className="muted">Each week the bot tests {state.found?.length ?? 39} candidate rules. None passed both checks this time, so it waits rather than trading a rule that only looked good by luck.</p>}
-            {challengers.length > 0 && <>
-              <h3>Challengers on paper <Info>These rules trade "in the shadow" alongside the current one. One takes over only when its own live record beats the current rule by at least {pct(LAB.promoteBy)} a trade over {LAB.promoteAfter}+ trades. A rule that used to trade stays here, so if its replacement does worse it's rolled back automatically.</Info></h3>
+            {challengers.length > 0 && <Disclosure title={`Backup rules being tested on paper (${challengers.length})`}>
+              <p className="muted small">These trade "in the shadow" with no money. One replaces the current rule only if its own live results beat it by at least {pct(LAB.promoteBy)} a trade over {LAB.promoteAfter}+ trades. The previous rule stays here, so a worse replacement gets rolled back automatically.</p>
               {challengers.map(r => <RuleCard key={r.v} r={r} title={`v${r.v}${r.wasChampion ? ' · previous rule' : ''}`} small />)}
-            </>}
+            </Disclosure>}
             {retired.length > 0 && <Disclosure title={`Retired rules (${retired.length})`}>
               <ul className="lab-events">{retired.map(r => <li key={r.v}><b>v{r.v}</b> {r.text} <span className="muted small">— {r.reason}</span></li>)}</ul>
             </Disclosure>}
           </section>
 
           <section className="card">
-            <h2>The cost gate <Info>Mark's rule: only open a position when the conservative estimate of its gain beats the full cost of buying and selling plus a safety margin. The estimate is the average result of every past signal of this rule, losers included, minus a margin for luck (one standard error). Stop-losses always execute, even at a loss.</Info></h2>
-            <div className="table-wrap"><table className="record">
-              <thead><tr><th></th>{accts.map(a => <th key={a.id}>{a.exchange}</th>)}</tr></thead>
-              <tbody>
-                <tr><td>Fee each way</td>{accts.map(a => <td key={a.id}>{a.feeLabel}</td>)}</tr>
-                <tr><td>Round trip <Info>Fee in and out, plus the gap between buy and sell prices (spread, from the exchange's live quote), plus {pct(LAB.slippage)} slippage each way.</Info></td>
-                  {accts.map(a => <td key={a.id}>≈ {pct(2 * a.fee + 2 * LAB.slippage)} + spread</td>)}</tr>
-                {champ && <tr><td>Rule's estimated gain</td>{accts.map(a => <td key={a.id}>{pct(estimate(champ.all))} a trade</td>)}</tr>}
-                {champ && <tr><td>Clears costs + {pct(LAB.margin)} margin?</td>{accts.map(a => {
-                  const ok = estimate(champ.all) > 2 * a.fee + 2 * LAB.slippage + LAB.margin
-                  return <td key={a.id}><span className={`tag ${ok ? 'green' : 'red'}`}>{ok ? 'Yes, before spread' : 'No: trades blocked'}</span></td>
-                })}</tr>}
-                <tr><td>Signals blocked</td>{accts.map(a => <td key={a.id}>{a.blocked.cost} by cost · {a.blocked.quote} no quote · {a.blocked.limits} by risk limits</td>)}</tr>
-              </tbody>
-            </table></div>
+            <h2>The cost gate</h2>
+            <p className="muted small" style={{ marginTop: 0 }}>Mark's rule: only buy when the expected gain beats the full cost of buying and selling, plus a {pct(LAB.margin)} safety margin.</p>
+            <div className="gate-grid">
+              {accts.map(a => {
+                const base = 2 * a.fee + 2 * LAB.slippage
+                const est = champ ? estimate(champ.all) : NaN
+                const ok = champ && est > base + LAB.margin
+                return (
+                  <div key={a.id} className="gate">
+                    <div className="gate-name">{a.exchange}</div>
+                    <div className="gate-line"><span>Buy + sell cost</span><b>≈ {pct(base)} + price gap</b></div>
+                    <div className="gate-line"><span>Expected gain</span><b>{champ ? pct(est) : '–'}</b></div>
+                    <div className="gate-verdict">{champ ? <span className={`tag ${ok ? 'green' : 'red'}`}>{ok ? 'Allowed to trade' : 'Blocked: costs too high'}</span> : <span className="tag">No rule yet</span>}</div>
+                    <div className="muted small">Skipped so far: {a.blocked.cost} too costly · {a.blocked.quote} no price · {a.blocked.limits} limits</div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className="hint">Expected gain = the average of every past signal of this rule, losers included, minus a margin for luck. Price gap = the difference between the exchange's buy and sell prices, read live (CoinSpot coins missing from its public feed are assumed to have a 1% gap).</p>
             {accts.some(a => a.lastBlocked.length) && <Disclosure title="Recently skipped signals">
               <ul className="lab-events">{accts.flatMap(a => a.lastBlocked.slice(-5).reverse().map((b, i) => <li key={a.id + i}><b>{a.exchange}</b> skipped {b.base}: {b.why} <span className="muted small">{when(b.t)}</span></li>))}</ul>
             </Disclosure>}
           </section>
 
-          <section className="card">
-            <h2>Positions</h2>
-            {accts.map(a => (
-              <div key={a.id} style={{ marginBottom: 14 }}>
-                <h3>{a.exchange} · cash {money(a.cashAud)}</h3>
-                {a.positions.length ? <div className="table-wrap"><table className="record">
-                  <thead><tr><th>Coin</th><th>Bought for</th><th>Buy price</th><th>Price now</th><th>Worth now</th><th>Stop-loss</th><th>Bought</th><th>Sell by</th><th>Rule</th></tr></thead>
-                  <tbody>{a.positions.map(p => {
-                    const now = state.prices?.[p.base]
-                    const worth = now ? p.units * now : NaN
-                    return (
-                    <tr key={p.base}><td><Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link></td><td>{moneyUsd(p.costUsd)}</td>
-                      <td>{px(p.entryPx)}</td>
-                      <td>{now ? <>{px(now)} <span className={cls(now / p.entryPx - 1)}>({pct(now / p.entryPx - 1)})</span></> : '–'}</td>
-                      <td>{now ? <>{moneyUsd(worth)} <span className={cls(worth / p.costUsd - 1)}>({pct(worth / p.costUsd - 1)} after costs)</span></> : '–'}</td>
-                      <td className="neg">{px(p.stop)} ({pct(p.stop / p.entryPx - 1)})</td>
-                      <td>{when(p.t)}</td><td>{when(p.exitT)}</td><td>v{p.v}</td></tr>
-                  )})}</tbody></table></div>
-                  : <p className="muted small">No open positions.</p>}
-                {a.closed.length > 0 && <Disclosure title={`Closed trades (${a.stats.n})`}>
-                  <div className="table-wrap"><table className="record">
-                    <thead><tr><th>Coin</th><th>Result after costs</th><th>Before costs</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
-                    <tbody>{a.closed.slice().reverse().map((c, i) => (
-                      <tr key={i}><td><b>{c.base}</b></td><td className={cls(c.net)}>{pct(c.net)}</td><td>{pct(c.gross)}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss' : 'Time up'}</td><td>{when(c.exitT)}</td></tr>
-                    ))}</tbody></table></div>
-                </Disclosure>}
-              </div>
-            ))}
-            {trades.length > 0 && <Disclosure title="Recent trade log">
-              <ul className="lab-events">{trades.map((e, i) => <li key={i}>{e.text} <span className="muted small">{when(e.t)}</span></li>)}</ul>
-            </Disclosure>}
-          </section>
-
           {state.found && (
             <section className="card">
-              <h2>Rules tested this week <Info>Every candidate is tried on all past signals across the 20 most-traded coins. It must be clearly profitable after {pct(LAB.refCost)} round-trip costs on the older data (at least {LAB.minTrain} trades, a t-score of {LAB.minTrainT}+), and still profitable on the last {LAB.validDays} days, which it was never chosen on.</Info></h2>
-              <div className="table-wrap"><table className="record">
-                <thead><tr><th>Rule</th><th>Older data</th><th>Last {LAB.validDays} days</th><th>Passed</th></tr></thead>
-                <tbody>{state.found.slice(0, 12).map(f => (
-                  <tr key={f.id}><td style={{ minWidth: 200, whiteSpace: 'normal' }}>{f.text}</td>
-                    <td className={cls(f.train.mean)}>{pct(f.train.mean)} · {f.train.n} trades</td>
-                    <td className={cls(f.valid.mean)}>{pct(f.valid.mean)} · {f.valid.n} trades</td>
-                    <td>{f.pass ? <span className="tag green">Yes</span> : <span className="tag">No</span>}</td></tr>
-                ))}</tbody></table></div>
-              <p className="hint">Results per trade after {pct(LAB.refCost)} costs. Coins scanned: {state.coinsScanned?.join(', ')}.</p>
+              <Disclosure title={<b>All {state.found.length} rules tested this week</b>}>
+                <p className="muted small">Each rule was tried on every past signal across the 20 most-traded coins. To pass, it must make money after {pct(LAB.refCost)} costs a trade on the older data (at least {LAB.minTrain} trades, and clearly more than luck) <i>and</i> on the last {LAB.validDays} days, which it wasn't chosen on.</p>
+                <div className="table-wrap"><table className="record">
+                  <thead><tr><th>Rule</th><th>Older data</th><th>Last {LAB.validDays} days</th><th>Passed</th></tr></thead>
+                  <tbody>{state.found.slice(0, 15).map(f => (
+                    <tr key={f.id}><td style={{ minWidth: 200, whiteSpace: 'normal' }}>{f.text}</td>
+                      <td className={cls(f.train.mean)}>{pct(f.train.mean)} · {f.train.n} trades</td>
+                      <td className={cls(f.valid.mean)}>{pct(f.valid.mean)} · {f.valid.n} trades</td>
+                      <td>{f.pass ? <span className="tag green">Yes</span> : <span className="tag">No</span>}</td></tr>
+                  ))}</tbody></table></div>
+                <p className="hint">Average result a trade after costs. Coins scanned: {state.coinsScanned?.join(', ')}.</p>
+              </Disclosure>
             </section>
           )}
 
-          <section className="card">
-            <h2>How the Lab works</h2>
-            <ol className="how-list">
-              <li><b>Find rules:</b> once a week it tests {state.found?.length ?? 39} candidate rules (breakouts after quiet or wild fortnights, dips in uptrends, surges, crashes) on about 2½ years of daily prices for the 20 most-traded coins.</li>
-              <li><b>Check them honestly:</b> a rule must make money after costs on the older data <i>and</i> on the last {LAB.validDays} days it was never chosen on.</li>
-              <li><b>Trade the best one</b> on paper. Every 5 hours it checks stop-losses and time limits; after each daily close it looks for new signals.</li>
-              <li><b>Cost gate</b> (Mark's rule): skip any entry whose conservative gain estimate doesn't beat fees, spread, slippage and a {pct(LAB.margin)} margin. If there's no live quote from the exchange, it skips too. The exception is CoinSpot: it lists far more coins than its public price feed shows (PEPE, for example), so for those the Lab assumes a cautious 1% spread and says so in the trade log.</li>
-              <li><b>Challengers in the shadow:</b> up to {LAB.maxChallengers} other rules trade on paper alongside. They're judged on batches of {LAB.promoteAfter}+ trades, never one loss, and the previous rule is kept so a worse replacement gets rolled back.</li>
-              <li><b>Fixed risk limits</b> the bot can't change: at most {pct0(LAB.maxPosition)} of an account per coin, a stop-loss costs at most about {pct0(LAB.riskPerTrade)} of the account, at most {LAB.maxOpen} positions, and at least {pct0(1 - LAB.maxInvested)} in cash.</li>
-            </ol>
-            <p className="hint">Fills are simulated at Binance's price plus the exchange's live spread, fee and slippage, so real fills will differ a little. A few weeks of paper results is still mostly luck; judge it on months.</p>
-          </section>
+          <p className="hint">Fills are simulated at Binance's price plus each exchange's live price gap, fee and 0.1% slippage, so real fills will differ a little. A few weeks of paper results is still mostly luck: judge it over months.</p>
         </>
       )}
     </main>
