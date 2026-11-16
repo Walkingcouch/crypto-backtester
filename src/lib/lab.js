@@ -34,7 +34,7 @@ export const LAB = {
 
 export const ACCOUNTS = [
   { id: 'john', owner: 'CoinSpot', broker: 'coinspot', exchange: 'CoinSpot', fee: 0.001, feeLabel: '0.1% market order', startAud: 1000 },
-  { id: 'mark', owner: 'Coinbase', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.012, feeLabel: '1.2% taker (lowest tier)', startAud: 1000 },
+  { id: 'mark', owner: 'Coinbase', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.006, feeLabel: '0.6% taker (lowest tier)', startAud: 1000 },
   { id: 'binance', owner: 'Binance', broker: 'binance', exchange: 'Binance', fee: 0.001, feeLabel: '0.1% spot', startAud: 1000 },
 ]
 const freshAccount = (a, audPerUsd) => ({

@@ -86,11 +86,11 @@ export default function Picks() {
         <p>A weekly shopping list. It checks the 20 most-traded coins, picks the ones in a clear uptrend, and says how much of your
           budget to put in each. Everything else stays in cash. It's a different strategy from Mark's original backtest (the Test page) and from the Lab bot.</p>
         <div className="howto">
-          <div><span className="n">1</span><b>Buy what's listed</b>Put the amounts shown into each coin. The rest of your budget stays in cash or a stablecoin.</div>
-          <div><span className="n">2</span><b>Check once a week</b>Come back weekly. Amounts change a little as trends strengthen or weaken. Changes under 2% of your budget aren't worth the fees.</div>
-          <div><span className="n">3</span><b>Sell what drops off</b>When a coin's trend breaks it leaves the list: sell it at that week's check. That's the strategy's exit; it has no fixed stop-loss (more below).</div>
+          <div><span className="n">1</span><b>What the rules would hold</b>The list shows what the rules would hold right now, sized to the budget you enter. The rest would sit in cash or a stablecoin.</div>
+          <div><span className="n">2</span><b>Reviewed weekly</b>The mix shifts a little as trends strengthen or weaken. Changes under 2% of the budget aren't worth the fees.</div>
+          <div><span className="n">3</span><b>Exits when a trend breaks</b>When a coin's trend breaks it drops off the list at the weekly check. That's the strategy's only exit; it has no fixed stop-loss (more below).</div>
         </div>
-        <div className="notice info small" style={{ marginTop: 12 }}>Rules-based suggestions for your own research, not personal financial advice. The rules are fixed from published studies (sources at the bottom) and weren't tuned to make the history look good.</div>
+        <div className="notice info small" style={{ marginTop: 12 }}>General information and simulation only, for your own research: this page doesn't know your situation and is not financial advice. The rules are fixed from published studies (sources at the bottom) and weren't tuned to make the history look good.</div>
       </div>
 
       <section className="card">

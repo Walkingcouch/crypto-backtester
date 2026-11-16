@@ -103,7 +103,8 @@ export function computeMetrics(t: number[], eq: number[], ex: number[], trades: 
   const cagr = growth > 0 ? Math.expm1(Math.min(Math.log(growth) / years, 50)) : -1
   const vol = std(rets) * Math.sqrt(bpy)
   const sharpe = vol > 0 ? (mean(rets) * bpy) / vol : 0
-  const dn = std(rets.filter(r => r < 0)) * Math.sqrt(bpy)
+  // downside deviation: root mean square of negative returns over ALL periods (standard Sortino)
+  const dn = Math.sqrt(rets.reduce((s2, r) => s2 + Math.min(r, 0) ** 2, 0) / (rets.length || 1)) * Math.sqrt(bpy)
   const sortino = dn > 0 ? (mean(rets) * bpy) / dn : 0
   let peak = -Infinity, mdd = 0
   for (const e of eq) { peak = Math.max(peak, e); mdd = Math.min(mdd, e / peak - 1) }
