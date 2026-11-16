@@ -18,7 +18,8 @@ export const EXPLORE = {
   randomPerRun: 16,
   mutantsPerRun: 20,
   crossPerRun: 6,
-  minTrades: 30,
+  minTrades: 30,          // to be ranked at all
+  minGradTrades: 60,      // to get a look at the held-back data
   complexityCost: 0.3,    // fitness lost per extra condition
   graduates: 8,
 }
@@ -76,7 +77,7 @@ export function evolve(data, S = EXPLORE, state, now) {
     return best
   }
   const kids = []
-  for (let k = 0; k < S.randomPerRun; k++) kids.push(randomSpec(rnd))
+  for (let k = 0; k < S.randomPerRun * (pop.length ? 1 : 4); k++) kids.push(randomSpec(rnd))   // seed wide on the first run
   for (let k = 0; k < S.mutantsPerRun && pop.length; k++) kids.push(mutate(parent().spec, rnd))
   for (let k = 0; k < S.crossPerRun && pop.length > 1; k++) kids.push(cross(parent().spec, parent().spec, rnd))
 
@@ -109,12 +110,12 @@ export function evolve(data, S = EXPLORE, state, now) {
   const bar = hurdle(ex.tried)
   ex.hurdle = bar
   for (const p of ex.population) {
-    if (p.tested || p.train.t < bar) continue
+    if (p.tested || p.train.t < bar || p.train.n < S.minGradTrades) continue
     p.tested = true; ex.holdoutTests++
     const ev = events(p.spec, data)
     p.valid = stats(ev.filter(e => e.t >= cut), S.refCost)
     p.all = stats(ev)
-    p.passed = p.valid.n >= 10 && p.valid.mean > 0 && p.valid.t >= 1
+    p.passed = p.valid.n >= 15 && p.valid.mean > 0 && p.valid.t >= 1
     ex.log.push({ t: now, id: p.id, text: p.text, trainT: p.train.t, valid: p.valid, passed: p.passed })
     if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, gen: p.gen, at: now })
   }
