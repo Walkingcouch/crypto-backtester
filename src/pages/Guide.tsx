@@ -100,6 +100,11 @@ export default function Guide() {
         </ul>
         <p>Expect the Coinbase account to trade far less: at 1.2% each way the gate blocks most signals. That's the point of the gate. Judge the Lab on months of results, not days.</p>
 
+        <h3>Lab: new ideas</h3>
+        <p>A second lab, under <Link to="/lab/explore">Lab → New ideas</Link>, invents strategies rather than picking from a fixed menu. It combines building blocks (new highs, moving averages, momentum, dips, volume spikes, calm or wild markets, Bitcoin's own trend) into rules of one to three conditions, keeps the best 40, and each run breeds about 40 more: random new ones, small changes to the best, and mixes of two good ones. Ideas are ranked on older data only. Because trying thousands of ideas guarantees some look great by luck, the bar an idea must clear rises with the number tried, and each idea gets a single look at the held-back last 180 days. Ideas that pass trade on paper exactly like the main Lab.</p>
+        <h3>Lab: day trading</h3>
+        <p><Link to="/lab/daytrade">Lab → Day trading</Link> tests 42 intraday rules on 1-hour candles for the 10 most-traded coins, all closed by 00:00 UTC (9:30am Darwin): intraday momentum (Shen, Urquhart &amp; Wang, 2022), overreaction reversal (Wen, Bouri, Xu &amp; Zhao, 2022), opening-range and volatility breakouts, and calm-market mean reversion, each with and without a daily-trend filter. On top of the main Lab's checks it runs a walk-forward test: each month it picks the rule that looked best over the previous 120 days and records what that rule actually earned the next month. Stops are checked on every hourly candle, at most 0.5% of an account is at risk per trade, and a 2% fall in a day stops new trades until the next day. Costs decide almost everything here: Coinbase Advanced at 0.6% each way needs more than 1.2% a trade just to break even.</p>
+
         <h2 id="read">Reading results</h2>
         <ul>
           <li><b>Total return</b> — how much $1 became. Easy to understand, easy to be fooled by.</li>

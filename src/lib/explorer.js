@@ -1,0 +1,132 @@
+// The Explorer: invents NEW strategies by combining building blocks (blocks.js), keeps the
+// fittest, and breeds variations of them — a small genetic search. Only ideas that survive an
+// honest check graduate to paper trading, using the same loop as the Lab (lab.js step/coach).
+//
+// Guarding against "found by luck":
+//  - Ideas are bred and ranked on OLDER data only (everything before the last 180 days).
+//  - Each idea gets ONE look at the held-back last 180 days, and only once it clears a bar that
+//    RISES with the number of ideas tried (the expected best t-score of that many coin flips).
+//  - Simpler ideas are preferred: each extra condition costs fitness.
+import { comboId, describeCombo, HOLDS, randomCond, STOPS, validCombo } from './blocks.js'
+import { DAY, events, LAB, stats } from './lab.js'
+
+export const EXPLORE = {
+  ...LAB,
+  coachEveryDays: 0,      // the coach runs every time (graduates appear any run)
+  promoteAfter: 12,
+  population: 40,         // ideas kept between runs
+  randomPerRun: 16,
+  mutantsPerRun: 20,
+  crossPerRun: 6,
+  minTrades: 30,
+  complexityCost: 0.3,    // fitness lost per extra condition
+  graduates: 8,
+}
+
+/** Small seeded generator so a run can be reproduced from its seed. */
+export function rng(seed) {
+  let s = seed >>> 0 || 1
+  return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296 }
+}
+
+/** The bar an idea must clear: the t-score the luckiest of N useless ideas would reach. */
+export const hurdle = tried => Math.max(2.5, Math.sqrt(2 * Math.log(Math.max(10, tried / 10))))
+
+function mutate(spec, rnd) {
+  const s = { conds: spec.conds.map(c => ({ ...c })), H: spec.H, stopM: spec.stopM }
+  const r = rnd()
+  if (r < 0.2) s.H = HOLDS[Math.floor(rnd() * HOLDS.length)]
+  else if (r < 0.35) s.stopM = STOPS[Math.floor(rnd() * STOPS.length)]
+  else if (r < 0.55 && s.conds.length < 3) s.conds.push(randomCond(rnd))
+  else if (r < 0.7 && s.conds.length > 1) s.conds.splice(Math.floor(rnd() * s.conds.length), 1)
+  else s.conds[Math.floor(rnd() * s.conds.length)] = randomCond(rnd)
+  return s
+}
+
+function cross(a, b, rnd) {
+  const pool = [...a.conds, ...b.conds]
+  const n = 1 + Math.floor(rnd() * Math.min(3, pool.length))
+  const conds = []
+  while (conds.length < n && pool.length) conds.push({ ...pool.splice(Math.floor(rnd() * pool.length), 1)[0] })
+  return { conds, H: rnd() < 0.5 ? a.H : b.H, stopM: rnd() < 0.5 ? a.stopM : b.stopM }
+}
+
+function randomSpec(rnd) {
+  const n = 1 + Math.floor(rnd() * 3)
+  return { conds: Array.from({ length: n }, () => randomCond(rnd)), H: HOLDS[Math.floor(rnd() * HOLDS.length)], stopM: STOPS[Math.floor(rnd() * STOPS.length)] }
+}
+
+/**
+ * One generation. Called by lab.step() in place of the Lab's fixed discover().
+ * Returns the graduates in the Lab's "found" format so the same coach can trade them.
+ */
+export function evolve(data, S = EXPLORE, state, now) {
+  const ex = (state.explore ||= { gen: 0, tried: 0, holdoutTests: 0, population: [], graduates: [], seen: [], log: [] })
+  ex.gen++
+  const rnd = rng((now / 3_600_000) ^ (ex.gen * 2654435761))
+  const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
+  const cut = last - S.validDays * DAY
+  const seen = new Set(ex.seen)
+
+  // breed
+  const pop = ex.population
+  const parent = () => {   // tournament of 3 on fitness
+    let best = null
+    for (let k = 0; k < 3 && pop.length; k++) { const p = pop[Math.floor(rnd() * pop.length)]; if (!best || p.fitness > best.fitness) best = p }
+    return best
+  }
+  const kids = []
+  for (let k = 0; k < S.randomPerRun; k++) kids.push(randomSpec(rnd))
+  for (let k = 0; k < S.mutantsPerRun && pop.length; k++) kids.push(mutate(parent().spec, rnd))
+  for (let k = 0; k < S.crossPerRun && pop.length > 1; k++) kids.push(cross(parent().spec, parent().spec, rnd))
+
+  // evaluate on OLDER data only
+  let added = 0
+  for (const spec of kids) {
+    if (!validCombo(spec)) continue
+    const id = comboId(spec)
+    if (seen.has(id)) continue
+    seen.add(id); ex.tried++; added++
+    const full = { kind: 'combo', ...spec }
+    const ev = events(full, data)
+    const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
+    if (train.n < S.minTrades) continue
+    const fitness = train.t - S.complexityCost * (spec.conds.length - 1)
+    pop.push({ id, spec: full, text: describeCombo(full), train, fitness, gen: ex.gen, tested: false })
+  }
+  ex.seen = [...seen].slice(-3000)
+  pop.sort((a, b) => b.fitness - a.fitness)
+  // keep variety: at most 2 versions of the same set of conditions (differing only in hold/stop)
+  const per = new Map()
+  ex.population = pop.filter((p, i, a) => {
+    if (a.findIndex(q => q.id === p.id) !== i) return false
+    const sig = p.id.split(':H')[0]
+    per.set(sig, (per.get(sig) || 0) + 1)
+    return per.get(sig) <= 2
+  }).slice(0, S.population)
+
+  // one honest look at the held-back period, only for ideas that clear the rising bar
+  const bar = hurdle(ex.tried)
+  ex.hurdle = bar
+  for (const p of ex.population) {
+    if (p.tested || p.train.t < bar) continue
+    p.tested = true; ex.holdoutTests++
+    const ev = events(p.spec, data)
+    p.valid = stats(ev.filter(e => e.t >= cut), S.refCost)
+    p.all = stats(ev)
+    p.passed = p.valid.n >= 10 && p.valid.mean > 0 && p.valid.t >= 1
+    ex.log.push({ t: now, id: p.id, text: p.text, trainT: p.train.t, valid: p.valid, passed: p.passed })
+    if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, gen: p.gen, at: now })
+  }
+  ex.log = ex.log.slice(-60)
+  ex.graduates.sort((a, b) => b.train.t - a.train.t)
+  ex.graduates = ex.graduates.slice(0, S.graduates)
+  ex.lastRun = { at: now, added, bar }
+
+  // refresh graduates' full-period stats (the cost gate uses them) and hand them to the coach
+  return ex.graduates.map(g => {
+    const all = stats(events(g.spec, data))
+    g.all = all
+    return { id: g.id, spec: g.spec, text: g.text, H: g.spec.H, train: g.train, valid: g.valid, all, pass: true }
+  })
+}

@@ -449,3 +449,6 @@ table.record td:first-child { white-space: nowrap; }
 .gate-name { font-weight: 700; }
 .gate-line { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; color: var(--muted); }
 .gate-line b { color: var(--text); font-weight: 600; white-space: nowrap; }
+.lab-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.lab-tabs a { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--border); color: var(--muted); font-weight: 600; font-size: 14px; text-decoration: none; }
+.lab-tabs a.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }

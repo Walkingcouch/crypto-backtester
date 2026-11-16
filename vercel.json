@@ -20,6 +20,12 @@
     },
     "api/delisted.js": {
       "maxDuration": 300
+    },
+    "api/explorer-cron.js": {
+      "maxDuration": 120
+    },
+    "api/daytrade-cron.js": {
+      "maxDuration": 300
     }
   },
   "headers": [

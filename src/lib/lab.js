@@ -13,6 +13,8 @@
 //    Stops always execute, even at a loss.
 //  - Risk limits are fixed here and are never changed by the loop.
 
+import { comboSignal, describeCombo } from './blocks.js'
+
 export const DAY = 86_400_000
 
 export const LAB = {
@@ -56,6 +58,7 @@ export function allRules() {
 export const ruleId = r => [r.kind, r.n ?? r.k ?? '', r.regime, 'H' + r.H].join(':')
 
 export function describe(r) {
+  if (r.kind === 'combo') return describeCombo(r)
   const reg = r.regime === 'any' ? '' : ` ${REGIMES[r.regime]}`
   const hold = `Hold up to ${r.H} days, with a stop-loss.`
   if (r.kind === 'breakout') return `Buy when a coin closes at a new ${r.n}-day high${reg}. ${hold}`
@@ -88,7 +91,8 @@ export function features(coin) {
 
 const regimeOk = (reg, x) => reg === 'any' ? Number.isFinite(x) : reg === 'quiet' ? x < 0.8 : x > 1.25
 
-export function signal(r, coin, F, i) {
+export function signal(r, coin, F, i, data) {
+  if (r.kind === 'combo') return comboSignal(r, coin, F, i, data)
   if (i < 200 || !Number.isFinite(F.dvol[i]) || !regimeOk(r.regime, F.ratio[i])) return false
   const c = coin.c[i], dv = F.dvol[i]
   if (r.kind === 'breakout') return c > (r.n === 20 ? F.hi20[i] : F.hi55[i])
@@ -99,7 +103,7 @@ export function signal(r, coin, F, i) {
 }
 
 /** Stop distance: about 2.5 typical moves over the holding period, between 5% and 25%. */
-export const stopPct = (dailyVol, H) => Math.max(0.05, Math.min(0.25, 2.5 * dailyVol * Math.sqrt(Math.min(H, 10))))
+export const stopPct = (dailyVol, H, m = 2.5) => Math.max(0.05, Math.min(0.25, m * dailyVol * Math.sqrt(Math.min(H, 10))))
 
 // ---------------------------------------------------------------- backtest of one rule
 /** Every past signal of rule r on every coin: enter next day's open, exit at stop or after H days. */
@@ -110,8 +114,8 @@ export function events(r, data) {
     const D = coin.c.length
     let busy = 0
     for (let i = 200; i < D - 1; i++) {
-      if (i < busy || !signal(r, coin, F, i)) continue
-      const entry = coin.o[i + 1], stop = entry * (1 - stopPct(F.dvol[i], r.H))
+      if (i < busy || !signal(r, coin, F, i, data)) continue
+      const entry = coin.o[i + 1], stop = entry * (1 - stopPct(F.dvol[i], r.H, r.stopM))
       let exit = NaN, j = i + 1
       for (; j <= i + r.H && j < D; j++) {
         if (coin.l[j] <= stop) { exit = j === i + 1 ? stop : Math.min(coin.o[j], stop); break }
@@ -191,13 +195,17 @@ export function coach(state, found, now, S = LAB) {
   for (const f of found) {
     if (!f.pass || state.rules.some(r => r.id === f.id && r.status !== 'retired')) continue
     if (active().filter(r => r.status === 'challenger').length >= S.maxChallengers) break
-    const r = { v: state.nextV++, id: f.id, spec: { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H }, text: f.text,
+    const r = { v: state.nextV++, id: f.id, spec: f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H }, text: f.text,
       status: champ ? 'challenger' : 'champion', since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] } }
     state.rules.push(r)
     if (!champ) { champ = r; r.reason = 'best rule on the back-test'; log('promote', `v${r.v} is the first trading rule: ${r.text} (past signals ${pct(f.all.mean)} a trade before costs, ${f.all.n} trades).`) }
     else log('challenger', `v${r.v} added to test on paper: ${r.text}`)
   }
-  if (!champ) { log('note', 'No rule passed the checks, so the accounts stay in cash this week.'); return }
+  if (!champ) {
+    const msg = 'No rule has passed the checks yet, so the accounts stay in cash.'
+    if (state.events[state.events.length - 1]?.text !== msg) log('note', msg)
+    return
+  }
 
   // promotion / rollback: best challenger whose live record beats the champion's over the same period
   let best = null
@@ -227,7 +235,7 @@ export function coach(state, found, now, S = LAB) {
  *   quotes: { john: { BASE: spread }, mark: { BASE: spread } }   // missing = no live quote → skip
  * }
  */
-export function step(state, market, now, S = LAB) {
+export function step(state, market, now, S = LAB, opts = {}) {
   const log = (kind, text) => push(state.events, { t: now, kind, text }, 300)
   const price = b => market.live[b]
   const ruleByV = new Map(state.rules.map(r => [r.v, r]))
@@ -279,9 +287,9 @@ export function step(state, market, now, S = LAB) {
 
   // 2. the coach, weekly
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000) {
-    const found = discover(data, S)
+    const found = (opts.discover || discover)(data, S, state, now)
     coach(state, found, now, S)
-    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
+    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
   }
@@ -296,9 +304,9 @@ export function step(state, market, now, S = LAB) {
         const i = coin.c.length - 1
         if (coin.t[i] !== lastDay) continue
         const F = coin.F || (coin.F = features(coin))
-        if (!signal(r.spec, coin, F, i)) continue
+        if (!signal(r.spec, coin, F, i, data)) continue
         const p = price(coin.base); if (!(p > 0)) continue
-        const sp = stopPct(F.dvol[i], r.spec.H)
+        const sp = stopPct(F.dvol[i], r.spec.H, r.spec.stopM)
         if (!state.shadow.some(s => s.v === r.v && s.base === coin.base))
           state.shadow.push({ v: r.v, base: coin.base, entry: p, t: now, stop: p * (1 - sp), exitT: now + r.spec.H * DAY })
         if (r !== champ) continue
