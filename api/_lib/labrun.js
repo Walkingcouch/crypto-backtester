@@ -9,6 +9,8 @@ export const API = 'https://data-api.binance.vision/api/v3'
 export const DAY = 86_400_000
 const STABLES = new Set(['U', 'USDD', 'FRAX', 'USDF', 'USDQ', 'USDG', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI', 'USDP', 'USDS', 'USDE', 'USD1', 'XUSD', 'RLUSD', 'EUR', 'EURI', 'AEUR', 'GBP', 'PYUSD', 'USTC', 'UST', 'SUSD', 'BFUSD', 'USDT'])
 const NOT_COINS = new Set(['WBTC', 'WBETH', 'WETH', 'PAXG', 'XAUT', 'BETH', 'STETH'])
+// Binance's tokenised US stocks and ETFs (e.g. NVDAB, SOXLB) trade like coins but aren't crypto
+const STOCK_RE = /^(AAPL|AMZN|AMD|BABA|COIN|CRCL|GOOGL|GOOG|HOOD|INTC|META|MSFT|MSTR|NFLX|NVDA|ORCL|PLTR|QQQ|SOXL|SPY|SQQQ|TQQQ|TSLA|TSM|UBER|AVGO|ARM|SMCI|GME|AMC|DIS|JPM|V|MA|IWM|GLD|SLV|TLT|XLE|XLF|NKE|PYPL|SHOP|SNOW|RIVN|LCID|BA|KO|PEP|WMT|COST|IBIT|MSTU|CRWV|IREN|CIFR|SBET|BMNR|GLXY|RKLB|OKLO|HIMS|ASTS)B$/
 
 export async function getJSON(url, ms = 9000) {
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms)
@@ -104,7 +106,7 @@ export function labHandler(opts) {
       const universe = tickers
         .filter(t => t.symbol.endsWith('USDT') && +t.lastPrice > 0 && t.count > 0)
         .map(t => ({ base: t.symbol.slice(0, -4), qv: +t.quoteVolume }))
-        .filter(t => !STABLES.has(t.base) && !NOT_COINS.has(t.base) && !/(UP|DOWN|BULL|BEAR)$/.test(t.base))
+        .filter(t => !STABLES.has(t.base) && !NOT_COINS.has(t.base) && !STOCK_RE.test(t.base) && !/(UP|DOWN|BULL|BEAR)$/.test(t.base))
         .sort((a, b) => b.qv - a.qv).slice(0, N).map(t => t.base)
       if (!universe.includes('BTC')) universe.push('BTC')
       const held = new Set()
