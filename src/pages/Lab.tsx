@@ -68,12 +68,12 @@ const STOPS_SWING = (S: Settings, H?: number) => (<ul>
 const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Settings, H?: number) => ReactNode }> = {
   sswing: {
     key: 'sswing', kind: 'swing', family: 'shares', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Swing rules', unit: 'trading days', every: 'on weekdays after each market closes (4:00pm Darwin for the ASX, 7:00am Darwin for the US)',
-    intro: <>The same swing-trading loop as the crypto Lab, on {US.length} large US shares and index funds and {ASX.length} large ASX shares and ETFs. It picks from 47 rules (the crypto lab's 39 plus 8 made for shares: oversold on the 2-day RSI in an uptrend, the turn-of-the-month effect, closing near the 52-week high, and 3 down days in an uptrend), trades the best on paper, and swaps rules only when one proves itself. Fees are Interactive Brokers' real prices, the broker picked for running a bot from Australia.</>,
+    intro: <>Tests share strategies the way professional equity quants do, on the S&amp;P 100 and ASX 50 ({US.length + ASX.length} shares and index funds, about 5 years of daily prices). The 19 rules are built for shares: factor portfolios that rank every share against the others (12-month momentum, 1-month reversal, low volatility), trend following, the turn-of-the-month effect, 52-week highs, short-term pullbacks and classic breakouts. A rule only counts if it <b>beats the market index</b> (S&amp;P 500 or ASX 200) over the same days, after Interactive Brokers' real fees.</>,
     howto: [['Two A$10,000 accounts', "One trades US shares, one trades ASX shares, both at Interactive Brokers. Bigger than the crypto accounts because each order has a minimum fee (A$5.50 on the ASX), which eats small trades."],
       ['Only trades worth the cost', 'The same cost gate: it buys only when the expected gain beats the brokerage, price gap and slippage on that order size, with room to spare.'],
       ['Once a day, after the close', "Signals use each market's finished daily bar. Every position has a stop-loss and a time limit."]],
-    noRule: 'Each week the bot re-tests its 47 rules on about 5 years of daily prices. None passed both checks this time, so it waits in cash.',
-    tested: <>Each rule was tried on every past signal across these shares over about 5 years. To pass, it must make money after {pct(STOCK.refCost)} costs a trade on the older data (at least {STOCK.minTrain} trades, and clearly more than luck) <i>and</i> on the last {STOCK.validDays} days. The list is today's big companies, which flatters past results a little.</>,
+    noRule: "Each week the bot re-tests its 19 rules. None beat the index clearly enough on both older and recent data, so it waits in cash. That's common: beating the index after costs is hard, which is why most professionals' benchmark is the index fund itself.",
+    tested: <>Each rule was tried on every past signal over about 5 years and judged on its return <b>above the market index</b> over the same days, after {pct(STOCK.refCost)} costs a trade. To pass: at least {STOCK.minTrain} trades and a t-score of {STOCK.minTrainT}+ on the older data (the higher bar professionals use when testing many ideas), <i>and</i> still ahead of the index on the last {STOCK.validDays} days. The share lists are today's index members, which flatters past results a little (survivorship bias).</>,
     stops: (S: Settings, H?: number) => (<ul>
       <li><b>Distance:</b> about 2.5 times the share's typical move over the holding period, never closer than 5% or further than 25% below the buy price.</li>
       <li><b>Checked once a day</b> at the close. A share that gaps down overnight can sell below its stop.</li>
@@ -384,6 +384,7 @@ function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: bool
       <div className="lab-rule-stats">
         <span>Past signals: <b className={cls(r.all.mean)}>{pct(r.all.mean)}</b> a trade before costs, won {pct0(r.all.win)} of {r.all.n}</span>
         <span>Conservative estimate: <b>{pct(estimate(r.all))}</b></span>
+        {r.vsIndex && <span>Versus the market index: <b className={cls(r.vsIndex.mean)}>{pct(r.vsIndex.mean)}</b> a trade over the same days, before costs</span>}
         <span>Live on paper: {live.n ? <><b className={cls(live.mean)}>{pct(live.mean)}</b> a trade over {live.n}, won {pct0(live.win)}</> : 'no closed trades yet'}</span>
       </div>
     </div>

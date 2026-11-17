@@ -13,7 +13,7 @@
 //    Stops always execute, even at a loss.
 //  - Risk limits are fixed here and are never changed by the loop.
 
-import { comboSignal, describeCombo } from './blocks.js'
+import { btcContext, comboSignal, describeCombo } from './blocks.js'
 
 export const DAY = 86_400_000
 
@@ -55,7 +55,7 @@ export function allRules() {
   for (const H of [3, 5, 10]) out.push({ kind: 'crash', regime: 'any', H })
   return out.map(r => ({ ...r, id: ruleId(r) }))
 }
-export const ruleId = r => [r.kind, r.n ?? r.k ?? '', r.regime, 'H' + r.H].join(':')
+export const ruleId = r => [r.kind, r.n ?? r.k ?? '', r.regime, 'H' + r.H, ...(r.mkt ? [r.mkt] : [])].join(':')
 
 export function describe(r) {
   if (r.kind === 'combo') return describeCombo(r)
@@ -64,6 +64,11 @@ export function describe(r) {
   if (r.kind === 'breakout') return `Buy when a coin closes at a new ${r.n}-day high${reg}. ${hold}`
   if (r.kind === 'dip') return `Buy a ${r.k === 1.5 ? 'sharp' : 'very sharp'} 5-day dip while the coin is above its 100-day average${reg}. ${hold}`
   if (r.kind === 'surge') return `Buy after an unusually strong 20-day rise${reg}. ${hold}`
+  const mk = r.mkt === 'up' ? ', only while the market index is above its 200-day average' : ''
+  if (r.kind === 'xmom') return `Each month, buy the top fifth of shares by 12-month return (skipping the last month)${mk}. ${hold}`
+  if (r.kind === 'xrev') return `Each week, buy the bottom fifth of shares by 1-month return (bet on a rebound)${mk}. ${hold}`
+  if (r.kind === 'lowvol') return `Each month, buy the calmest fifth of shares (lowest 60-day volatility)${mk}. ${hold}`
+  if (r.kind === 'trend') return `Each month, buy shares and funds trading above their 200-day average (trend following). ${hold}`
   if (r.kind === 'rsi2') return `Buy when a coin is oversold on the 2-day RSI (below 10) while above its 200-day average. ${hold}`
   if (r.kind === 'tom') return `Buy at the close of the month's last trading day (turn-of-the-month effect). ${hold}`
   if (r.kind === 'hi52') return `Buy when a coin closes within 2% of its 52-week high. ${hold}`
@@ -86,6 +91,74 @@ export function shareRules() {
   for (const H of [10, 20]) out.push({ kind: 'hi52', regime: 'any', H })
   for (const H of [3, 5]) out.push({ kind: 'down3', regime: 'any', H })
   return out.map(r => ({ ...r, id: ruleId(r) }))
+}
+
+/**
+ * The rule menu for shares, built on what professional equity quants actually use, judged against
+ * the market index. Cross-sectional rules rank every share in its market against the others:
+ *  xmom    12-1 momentum, top fifth, monthly (Jegadeesh & Titman 1993; Carhart 1997; Asness, Moskowitz
+ *          & Pedersen 2013)
+ *  xrev    1-month short-term reversal, bottom fifth, weekly (Jegadeesh 1990; Lehmann 1990)
+ *  lowvol  low volatility, calmest fifth, monthly (Ang, Hodrick, Xing & Zhang 2006; Baker, Bradley &
+ *          Wurgler 2011; Frazzini & Pedersen 2014)
+ *  trend   above the 200-day average, monthly (Faber 2007; Moskowitz, Ooi & Pedersen 2012)
+ * each with and without a market-trend filter where it matters, plus the 8 share rules above and the
+ * classic 20- and 55-day breakouts (Donchian channels). Crypto-only rules are left out.
+ */
+export function shareRuleSet() {
+  const out = []
+  for (const mkt of ['', 'up']) {
+    out.push({ kind: 'xmom', regime: 'any', H: 21, mkt })
+    out.push({ kind: 'xrev', regime: 'any', H: 5, mkt })
+    out.push({ kind: 'lowvol', regime: 'any', H: 21, mkt })
+  }
+  out.push({ kind: 'trend', regime: 'any', H: 21 })
+  for (const n of [20, 55]) for (const H of [10, 20]) out.push({ kind: 'breakout', n, regime: 'any', H })
+  return [...out.map(r => (r.mkt ? r : (delete r.mkt, r))).map(r => ({ ...r, id: ruleId(r) })), ...shareRules()]
+}
+
+// ---------- cross-sectional ranks (each market ranked separately, one table per day)
+const isMonthStart = (coin, i) => i > 0 && new Date(coin.t[i]).getUTCMonth() !== new Date(coin.t[i - 1]).getUTCMonth()
+const isWeekEnd = (coin, i) => new Date(coin.t[i]).getUTCDay() === 5
+function xsValue(kind, coin, i) {
+  const c = coin.c
+  if (kind === 'xmom') return i >= 252 ? c[i - 21] / c[i - 252] - 1 : NaN
+  if (kind === 'xrev') return i >= 21 ? -(c[i] / c[i - 21] - 1) : NaN            // worst month first
+  if (kind === 'lowvol') {
+    if (i < 61) return NaN
+    let m = 0; for (let k = i - 59; k <= i; k++) m += Math.log(c[k] / c[k - 1]); m /= 60
+    let v = 0; for (let k = i - 59; k <= i; k++) v += (Math.log(c[k] / c[k - 1]) - m) ** 2
+    return -Math.sqrt(v / 59)                                                      // calmest first
+  }
+  return NaN
+}
+/** Rank of the share among its market on that day: 0 = best. Returns { rank, count, value }. */
+export function xsRank(kind, coin, i, data) {
+  const key = `${kind}|${coin.market || ''}|${coin.t[i]}`
+  data.xs ||= new Map()
+  let table = data.xs.get(key)
+  if (!table) {
+    const vals = []
+    for (const c of data.coins) {
+      if ((c.market || '') !== (coin.market || '') || /^(SPY|QQQ|IWM|DIA|IOZ|VAS|STW)(\.AX)?$/.test(c.base)) continue   // index funds aren't ranked
+      c.tIdx ||= new Map(c.t.map((t, j) => [t, j]))
+      const j = c.tIdx.get(coin.t[i])
+      if (j == null) continue
+      const v = xsValue(kind, c, j)
+      if (Number.isFinite(v)) vals.push([c.base, v])
+    }
+    vals.sort((a, b) => b[1] - a[1])
+    table = new Map(vals.map(([b, v], r) => [b, { rank: r, count: vals.length, value: v }]))
+    data.xs.set(key, table)
+  }
+  return table.get(coin.base) || { rank: Infinity, count: 0, value: NaN }
+}
+function marketUp(data, coin, i) {
+  const { btc, idx } = btcContext(data, coin.market || '')
+  const j = btc ? idx.get(coin.t[i]) : undefined
+  if (j == null || j < 200) return false
+  let s = 0; for (let k = j - 199; k <= j; k++) s += btc.c[k]
+  return btc.c[j] > s / 200
 }
 
 // ---------------------------------------------------------------- features
@@ -143,6 +216,13 @@ export function signal(r, coin, F, i, data) {
   if (r.kind === 'dip') return c > F.sma100[i] && F.r5[i] < -r.k * dv * Math.sqrt(5)
   if (r.kind === 'surge') return F.r20[i] > 2 * dv * Math.sqrt(20)
   if (r.kind === 'crash') return F.r5[i] < -3 * dv * Math.sqrt(5)
+  if (r.mkt === 'up' && !marketUp(data, coin, i)) return false
+  if (r.kind === 'xmom' || r.kind === 'lowvol' || r.kind === 'xrev') {
+    if (r.kind === 'xrev' ? !isWeekEnd(coin, i) : !isMonthStart(coin, i)) return false
+    const x = xsRank(r.kind, coin, i, data)
+    return x.count >= 10 && x.rank < Math.ceil(x.count / 5)
+  }
+  if (r.kind === 'trend') { const X = extra(coin); return isMonthStart(coin, i) && c > X.sma200[i] }
   if (r.kind === 'rsi2') { const X = extra(coin); return c > X.sma200[i] && X.rsi2[i] < 10 }
   if (r.kind === 'tom') return lastWeekdayOfMonth(coin.t[i])
   if (r.kind === 'hi52') { const X = extra(coin); return c >= 0.98 * X.hi250[i] }
@@ -170,7 +250,15 @@ export function events(r, data) {
         if (j === i + r.H) { exit = coin.c[j]; break }
       }
       if (!Number.isFinite(exit)) break       // still open at the end of the data
-      out.push({ base: coin.base, t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1 })
+      const ev = { base: coin.base, t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1 }
+      // shares: what the market index did over exactly the same days (buy its open, sell its close)
+      const B = data.bench?.[coin.market || '']
+      if (B && B !== coin) {
+        B.tIdx ||= new Map(B.t.map((t, k) => [t, k]))
+        const a = B.tIdx.get(coin.t[i + 1]), b = B.tIdx.get(coin.t[j])
+        if (a != null && b != null) ev.ex = ev.g - (B.c[b] / B.o[a] - 1)
+      }
+      out.push(ev)
       busy = j
     }
   }
@@ -191,13 +279,22 @@ export function stats(ev, cost = 0) {
 export function discover(data, S = LAB) {
   const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
   const cut = last - S.validDays * DAY
-  return [...allRules(), ...(S.extraRules ? S.extraRules() : [])].map(r => {
+  if (S.benchmarks) {                       // shares: judge every rule against the market index
+    data.bench = {}
+    for (const [m, b] of Object.entries(S.benchmarks)) data.bench[m] = data.coins.find(c => c.base === b)
+  }
+  const rules = S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])]
+  return rules.map(r => {
     const ev = events(r, data)
-    const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
-    const valid = stats(ev.filter(e => e.t >= cut), S.refCost)
     const all = stats(ev)                       // gross, used by the cost gate
+    // with a benchmark, the test is the return ABOVE the index over the same days, after costs
+    const judged = S.benchmarks ? ev.filter(e => Number.isFinite(e.ex)).map(e => ({ ...e, g: e.ex })) : ev
+    const train = stats(judged.filter(e => e.exitT < cut), S.refCost)
+    const valid = stats(judged.filter(e => e.t >= cut), S.refCost)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
-    return { ...r, text: describe(r), train, valid, all, pass }
+    const out = { ...r, text: describe(r), train, valid, all, pass }
+    if (S.benchmarks) out.vsIndex = stats(judged)   // average beat of the index, before costs
+    return out
   }).sort((a, b) => (b.pass - a.pass) || b.train.t - a.train.t)
 }
 
@@ -241,7 +338,7 @@ export function coach(state, found, now, S = LAB) {
   const byId = new Map(found.map(f => [f.id, f]))
   for (const r of state.rules) {           // refresh each rule's back-test
     const f = byId.get(r.id)
-    if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass }
+    if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass; if (f.vsIndex) r.vsIndex = f.vsIndex }
   }
   const active = () => state.rules.filter(r => r.status !== 'retired')
   let champ = state.rules.find(r => r.status === 'champion')
@@ -257,8 +354,8 @@ export function coach(state, found, now, S = LAB) {
   for (const f of found) {
     if (!f.pass || state.rules.some(r => r.id === f.id && r.status !== 'retired')) continue
     if (active().filter(r => r.status === 'challenger').length >= S.maxChallengers) break
-    const r = { v: state.nextV++, id: f.id, spec: f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H }, text: f.text,
-      status: champ ? 'challenger' : 'champion', since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] } }
+    const r = { v: state.nextV++, id: f.id, spec: f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H, ...(f.mkt ? { mkt: f.mkt } : {}) }, text: f.text,
+      status: champ ? 'challenger' : 'champion', since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] }, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }
     state.rules.push(r)
     if (!champ) { champ = r; r.reason = 'best rule on the back-test'; log('promote', `v${r.v} is the first trading rule: ${r.text} (past signals ${pct(f.all.mean)} a trade before costs, ${f.all.n} trades).`) }
     else log('challenger', `v${r.v} added to test on paper: ${r.text}`)
@@ -349,11 +446,12 @@ export function step(state, market, now, S = LAB, opts = {}) {
   }
 
   // 2. the coach, weekly
-  const newRules = S.extraRules && !S.extraRules().every(r => state.found?.some(f => f.id === r.id))   // rule list grew: re-test now
+  const ruleList = S.ruleSet || S.extraRules
+  const newRules = ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))   // rule list changed: re-test now
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules) {
     const found = (opts.discover || discover)(data, S, state, now)
     coach(state, found, now, S)
-    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
+    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
   }
@@ -370,8 +468,10 @@ export function step(state, market, now, S = LAB, opts = {}) {
     if (!(lastDay > prev)) continue
     if (g) state.lastSignalDays[g] = lastDay; else state.lastSignalDay = lastDay
     for (const r of state.rules.filter(x => x.status !== 'retired')) {
-      for (const coin of market.coins) {
-        if ((coin.market || '') !== g) continue
+      // ranked rules buy their best-ranked shares first (cash and slots run out)
+      let order = market.coins.filter(c => (c.market || '') === g)
+      if (['xmom', 'xrev', 'lowvol'].includes(r.spec.kind)) order = order.map(c => [c, xsRank(r.spec.kind, c, c.c.length - 1, data).rank]).sort((a, b) => a[1] - b[1]).map(x => x[0])
+      for (const coin of order) {
         const i = coin.c.length - 1
         if (coin.t[i] !== lastDay) continue
         const F = coin.F || (coin.F = features(coin))
