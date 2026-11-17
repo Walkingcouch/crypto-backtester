@@ -17,7 +17,7 @@ export interface Account {
 }
 export interface LabEvent { t: number; kind: string; text: string }
 export interface LabState {
-  learning?: { since: number; active: number; eligible: number; benched: number; minHoldDays?: number; failAfter?: number }
+  learning?: { v?: number; since: number; active: number; eligible: number; benched: number; minHoldDays?: number; failAfter?: number }
   version: number; created: number; lastRun: number | null; lastSignalDay: number; lastCoach: number; nextV: number
   rules: LabRule[]; shadow: { v: number; base: string; entry: number; t: number; stop: number; exitT: number }[]
   events: LabEvent[]; history: ({ t: number } & Record<string, number>)[]

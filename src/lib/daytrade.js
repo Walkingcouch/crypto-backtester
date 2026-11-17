@@ -267,7 +267,7 @@ export function stepDay(state, market, now, S = DT) {
   }
 
   // 1. daily re-test + walk-forward; practice mode while nothing passes
-  const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && !state.learning && !state.rules.some(r => r.status === 'champion' && !r.practice))
+  const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp)) && market.coins.length) {
     const found = discoverDay(data, S)
     state.walk = walkForward(found, data, S)

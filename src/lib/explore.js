@@ -86,7 +86,8 @@ export function exploreCoach(state, found, now, S, log) {
 
   // ideas still inside their minimum run keep their slot, whatever their score
   const active = state.rules.filter(r => r.practice && r.status !== 'retired')
-  const protectedR = active.filter(r => now - (r.since || 0) < S.minHoldDays * DAY && byId.has(r.id))
+  // (rules carried over from the old practice mode, before the diverse line-up existed, get no protection)
+  const protectedR = state.learning?.v === 2 ? active.filter(r => now - (r.since || 0) < S.minHoldDays * DAY && byId.has(r.id)) : []
   const want = protectedR.map(r => ({ f: byId.get(r.id), s: exploreScore(state, byId.get(r.id), S), slot: r.explorer ? 'explorer' : 'challenger', kept: true }))
   const kinds = new Set(want.filter(w => w.slot !== 'explorer').map(w => w.f.spec.kind))
   const mainSlots = S.practiceRules - 1
@@ -97,7 +98,8 @@ export function exploreCoach(state, found, now, S, log) {
   }
   if (!want.some(w => w.slot === 'explorer')) {
     const rest = scored.filter(x => !want.some(w => w.f.id === x.f.id))
-    rest.sort((a, b) => liveStats(state, a.f.id, 0).n - liveStats(state, b.f.id, 0).n || b.s - a.s)
+    // prefer a family not already trading, then the least-tried, then the best score
+    rest.sort((a, b) => kinds.has(a.f.spec.kind) - kinds.has(b.f.spec.kind) || liveStats(state, a.f.id, 0).n - liveStats(state, b.f.id, 0).n || b.s - a.s)
     if (rest[0]) want.push({ ...rest[0], slot: 'explorer' })
   }
   // top score among the non-explorer slots is labelled the lead idea
@@ -121,7 +123,7 @@ export function exploreCoach(state, found, now, S, log) {
     r.reason = reasonFor(state, r, S, now)
     if (!prevActive.has(f.id)) log('promote', `Learning: v${r.v} starts a ${S.minHoldDays}-day run on paper (${w.slot === 'explorer' ? 'untried idea' : 'best of its kind'}): ${r.text}`)
   }
-  state.learning = { since: state.learning?.since || now, active: want.length, eligible: eligible.length, benched: Object.keys(state.bench).length, minHoldDays: S.minHoldDays, failAfter: S.failAfter }
+  state.learning = { v: 2, since: state.learning?.since || now, active: want.length, eligible: eligible.length, benched: Object.keys(state.bench).length, minHoldDays: S.minHoldDays, failAfter: S.failAfter }
 }
 
 function reasonFor(state, r, S, now) {
