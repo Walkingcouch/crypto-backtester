@@ -63,23 +63,43 @@
   "crons": [
     {
       "path": "/api/stocks-cron",
-      "schedule": "30 6,21 * * *"
-    },
-    {
-      "path": "/api/stocks-explorer-cron",
-      "schedule": "40 6,21 * * *"
-    },
-    {
-      "path": "/api/stocks-day-cron",
-      "schedule": "5,35 * * * *"
+      "schedule": "30 6 * * 1-5"
     },
     {
       "path": "/api/stocks-cron",
-      "schedule": "45 10 17 11 *"
+      "schedule": "30 21 * * 1-5"
     },
     {
       "path": "/api/stocks-explorer-cron",
-      "schedule": "47 10 17 11 *"
+      "schedule": "40 6 * * 1-5"
+    },
+    {
+      "path": "/api/stocks-explorer-cron",
+      "schedule": "40 21 * * 1-5"
+    },
+    {
+      "path": "/api/stocks-day-cron",
+      "schedule": "5,35 23 * * 0-4"
+    },
+    {
+      "path": "/api/stocks-day-cron",
+      "schedule": "5,35 0-6 * * 1-5"
+    },
+    {
+      "path": "/api/stocks-day-cron",
+      "schedule": "5,35 13-21 * * 1-5"
+    },
+    {
+      "path": "/api/stocks-cron",
+      "schedule": "55 10 17 11 *"
+    },
+    {
+      "path": "/api/stocks-explorer-cron",
+      "schedule": "57 10 17 11 *"
+    },
+    {
+      "path": "/api/stocks-day-cron",
+      "schedule": "59 10 17 11 *"
     }
   ]
 }

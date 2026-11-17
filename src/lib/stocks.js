@@ -1,7 +1,7 @@
 // Stocks Lab: the same swing loop as the crypto Lab (lab.js), on daily bars of large US and ASX
 // shares, paper-traded at Interactive Brokers' real fees (the broker picked for bots: full API,
 // unattended orders, ASX + US in one account, paper account included).
-import { LAB } from './lab.js'
+import { LAB, shareRules } from './lab.js'
 
 // Large, liquid names and index funds. A fixed list of today's big companies flatters back-tests
 // a little (survivorship bias: the ones that shrank aren't in it), so treat results as optimistic.
@@ -33,6 +33,7 @@ export const STOCK = {
   maxInvested: 0.8,
   refCost: 0.004,         // round trip used when choosing rules (fees, spread, slippage)
   daysPerBar: 1.4,        // 5 trading days a week: a 10-day hold is about 14 calendar days
+  extraRules: shareRules, // 8 share-specific rules on top of the 39 (see lab.js)
 }
 
 // The idea factory (explorer.js) on the same shares and accounts. "Bitcoin's trend" becomes the

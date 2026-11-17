@@ -67,12 +67,12 @@ const STOPS_SWING = (S: Settings, H?: number) => (<ul>
 
 const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Settings, H?: number) => ReactNode }> = {
   sswing: {
-    key: 'sswing', kind: 'swing', family: 'shares', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Swing rules', unit: 'trading days', every: 'after each market closes (4:00pm Darwin for the ASX, 7:00am Darwin for the US)',
-    intro: <>The same swing-trading loop as the crypto Lab, on {US.length} large US shares and index funds and {ASX.length} large ASX shares and ETFs. It picks from the same 39 rules, trades the best on paper, and swaps rules only when one proves itself. Fees are Interactive Brokers' real prices, the broker picked for running a bot from Australia.</>,
+    key: 'sswing', kind: 'swing', family: 'shares', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Swing rules', unit: 'trading days', every: 'on weekdays after each market closes (4:00pm Darwin for the ASX, 7:00am Darwin for the US)',
+    intro: <>The same swing-trading loop as the crypto Lab, on {US.length} large US shares and index funds and {ASX.length} large ASX shares and ETFs. It picks from 47 rules (the crypto lab's 39 plus 8 made for shares: oversold on the 2-day RSI in an uptrend, the turn-of-the-month effect, closing near the 52-week high, and 3 down days in an uptrend), trades the best on paper, and swaps rules only when one proves itself. Fees are Interactive Brokers' real prices, the broker picked for running a bot from Australia.</>,
     howto: [['Two A$10,000 accounts', "One trades US shares, one trades ASX shares, both at Interactive Brokers. Bigger than the crypto accounts because each order has a minimum fee (A$5.50 on the ASX), which eats small trades."],
       ['Only trades worth the cost', 'The same cost gate: it buys only when the expected gain beats the brokerage, price gap and slippage on that order size, with room to spare.'],
       ['Once a day, after the close', "Signals use each market's finished daily bar. Every position has a stop-loss and a time limit."]],
-    noRule: 'Each week the bot re-tests its 39 rules on about 5 years of daily prices. None passed both checks this time, so it waits in cash.',
+    noRule: 'Each week the bot re-tests its 47 rules on about 5 years of daily prices. None passed both checks this time, so it waits in cash.',
     tested: <>Each rule was tried on every past signal across these shares over about 5 years. To pass, it must make money after {pct(STOCK.refCost)} costs a trade on the older data (at least {STOCK.minTrain} trades, and clearly more than luck) <i>and</i> on the last {STOCK.validDays} days. The list is today's big companies, which flatters past results a little.</>,
     stops: (S: Settings, H?: number) => (<ul>
       <li><b>Distance:</b> about 2.5 times the share's typical move over the holding period, never closer than 5% or further than 25% below the buy price.</li>
@@ -82,7 +82,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
     </ul>),
   },
   sexplore: {
-    key: 'sexplore', kind: 'explore', family: 'shares', sid: 'stocks-explore', api: '/api/stocks-explorer-cron?dry=1', S: STOCK_EXPLORE as unknown as Settings, title: 'New ideas', unit: 'trading days', every: 'after each market closes (4:10pm Darwin for the ASX, 7:10am Darwin for the US)',
+    key: 'sexplore', kind: 'explore', family: 'shares', sid: 'stocks-explore', api: '/api/stocks-explorer-cron?dry=1', S: STOCK_EXPLORE as unknown as Settings, title: 'New ideas', unit: 'trading days', every: 'on weekdays after each market closes (4:10pm Darwin for the ASX, 7:10am Darwin for the US)',
     intro: <>The idea factory from the crypto lab, on the same {US.length} US and {ASX.length} ASX shares: it combines building blocks (new highs, moving averages, momentum, dips, volume spikes, calm or wild markets, and the market's own trend: the S&amp;P 500 for US shares, the ASX 200 for ASX shares) into new rules, keeps the fittest and breeds variations. Only ideas that pass an honest check trade on paper.</>,
     howto: [['Invent and breed', 'Each run adds about 100 new ideas: random new ones, small changes to the best so far, and mixes of two good ones.'],
       ['A bar that rises', 'The more ideas tried, the higher the bar, and each idea gets just one look at the held-back last 180 days.'],
@@ -97,7 +97,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
     </ul>),
   },
   sday: {
-    key: 'sday', kind: 'day', family: 'shares', sid: 'stocks-day', api: '/api/stocks-day-cron?dry=1', S: SDT as unknown as Settings, title: 'Day trading', unit: 'hours', every: 'every half hour while a market is open',
+    key: 'sday', kind: 'day', family: 'shares', sid: 'stocks-day', api: '/api/stocks-day-cron?dry=1', S: SDT as unknown as Settings, title: 'Day trading', unit: 'hours', every: 'every half hour while the ASX or US market is open, weekdays only',
     intro: <>Day-trading rules from published research on 1-hour bars of {US_DAY.length} liquid US shares and funds and {ASX_DAY.length} big ASX shares. Every position is sold by that market's close (US 4:00pm New York, ASX 4:00pm Sydney). Same honest loop as the crypto day-trading lab, at Interactive Brokers' fees.</>,
     howto: [['Five research-backed families', 'Intraday momentum (the first hour predicts the last), gap-down fill, opening-range breakout, volatility breakout and overreaction reversal, each with and without a daily-trend filter (34 rules).'],
       ['US needs US$25,000', "US brokers, Interactive Brokers included, limit margin accounts under US$25,000 to 3 day trades in 5 days. So the US account starts at A$40,000; the ASX account at A$10,000."],

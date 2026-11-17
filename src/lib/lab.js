@@ -64,7 +64,28 @@ export function describe(r) {
   if (r.kind === 'breakout') return `Buy when a coin closes at a new ${r.n}-day high${reg}. ${hold}`
   if (r.kind === 'dip') return `Buy a ${r.k === 1.5 ? 'sharp' : 'very sharp'} 5-day dip while the coin is above its 100-day average${reg}. ${hold}`
   if (r.kind === 'surge') return `Buy after an unusually strong 20-day rise${reg}. ${hold}`
+  if (r.kind === 'rsi2') return `Buy when a coin is oversold on the 2-day RSI (below 10) while above its 200-day average. ${hold}`
+  if (r.kind === 'tom') return `Buy at the close of the month's last trading day (turn-of-the-month effect). ${hold}`
+  if (r.kind === 'hi52') return `Buy when a coin closes within 2% of its 52-week high. ${hold}`
+  if (r.kind === 'down3') return `Buy after 3 down days in a row while the coin is above its 200-day average. ${hold}`
   return `Buy after an unusually hard 5-day fall (bet on a bounce). ${hold}`
+}
+
+/**
+ * Extra rules for shares, each from well-known research or practice:
+ *  rsi2   short-term oversold in an uptrend (Connors & Alvarez, "Short Term Trading Strategies That Work", 2009)
+ *  tom    turn-of-the-month effect: shares tend to rise over the month's last and first few days
+ *         (Ariel 1987; Lakonishok & Smidt 1988; McConnell & Xu 2008)
+ *  hi52   nearness to the 52-week high predicts further gains (George & Hwang, Journal of Finance 2004)
+ *  down3  short-term pullback in an uptrend (short-term reversal, Jegadeesh 1990)
+ */
+export function shareRules() {
+  const out = []
+  for (const H of [3, 5]) out.push({ kind: 'rsi2', regime: 'any', H })
+  for (const H of [3, 5]) out.push({ kind: 'tom', regime: 'any', H })
+  for (const H of [10, 20]) out.push({ kind: 'hi52', regime: 'any', H })
+  for (const H of [3, 5]) out.push({ kind: 'down3', regime: 'any', H })
+  return out.map(r => ({ ...r, id: ruleId(r) }))
 }
 
 // ---------------------------------------------------------------- features
@@ -89,6 +110,29 @@ export function features(coin) {
   return { lr, dvol, ratio, hi20, hi55, sma100, r5, r20 }
 }
 
+/** Slower-to-build series the share rules need, made once per coin when first asked for. */
+function extra(coin) {
+  if (coin.X) return coin.X
+  const c = coin.c, n = c.length
+  const sma200 = new Float64Array(n).fill(NaN), rsi2 = new Float64Array(n).fill(NaN), hi250 = new Float64Array(n).fill(NaN)
+  let s200 = 0, up = 0, dn = 0
+  for (let i = 0; i < n; i++) {
+    s200 += c[i]; if (i >= 200) s200 -= c[i - 200]; if (i >= 199) sma200[i] = s200 / 200
+    if (i >= 1) {                                         // Wilder's 2-day RSI
+      const ch = c[i] - c[i - 1], u = Math.max(ch, 0), d = Math.max(-ch, 0)
+      if (i <= 2) { up += u / 2; dn += d / 2 } else { up = (up + u) / 2; dn = (dn + d) / 2 }
+      if (i >= 2) rsi2[i] = dn === 0 ? 100 : 100 - 100 / (1 + up / dn)
+    }
+    if (i >= 250) { let m = -Infinity; for (let k = i - 249; k <= i; k++) if (c[k] > m) m = c[k]; hi250[i] = m }
+  }
+  return (coin.X = { sma200, rsi2, hi250 })
+}
+/** Is day t (UTC midnight of a trading date) the month's last weekday? */
+function lastWeekdayOfMonth(t) {
+  const d = new Date(t), next = new Date(t + DAY * (d.getUTCDay() === 5 ? 3 : 1))
+  return next.getUTCMonth() !== d.getUTCMonth()
+}
+
 const regimeOk = (reg, x) => reg === 'any' ? Number.isFinite(x) : reg === 'quiet' ? x < 0.8 : x > 1.25
 
 export function signal(r, coin, F, i, data) {
@@ -99,6 +143,10 @@ export function signal(r, coin, F, i, data) {
   if (r.kind === 'dip') return c > F.sma100[i] && F.r5[i] < -r.k * dv * Math.sqrt(5)
   if (r.kind === 'surge') return F.r20[i] > 2 * dv * Math.sqrt(20)
   if (r.kind === 'crash') return F.r5[i] < -3 * dv * Math.sqrt(5)
+  if (r.kind === 'rsi2') { const X = extra(coin); return c > X.sma200[i] && X.rsi2[i] < 10 }
+  if (r.kind === 'tom') return lastWeekdayOfMonth(coin.t[i])
+  if (r.kind === 'hi52') { const X = extra(coin); return c >= 0.98 * X.hi250[i] }
+  if (r.kind === 'down3') { const X = extra(coin), k = coin.c; return c > X.sma200[i] && k[i] < k[i - 1] && k[i - 1] < k[i - 2] && k[i - 2] < k[i - 3] }
   return false
 }
 
@@ -143,7 +191,7 @@ export function stats(ev, cost = 0) {
 export function discover(data, S = LAB) {
   const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
   const cut = last - S.validDays * DAY
-  return allRules().map(r => {
+  return [...allRules(), ...(S.extraRules ? S.extraRules() : [])].map(r => {
     const ev = events(r, data)
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     const valid = stats(ev.filter(e => e.t >= cut), S.refCost)
@@ -301,7 +349,8 @@ export function step(state, market, now, S = LAB, opts = {}) {
   }
 
   // 2. the coach, weekly
-  if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000) {
+  const newRules = S.extraRules && !S.extraRules().every(r => state.found?.some(f => f.id === r.id))   // rule list grew: re-test now
+  if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules) {
     const found = (opts.discover || discover)(data, S, state, now)
     coach(state, found, now, S)
     state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
