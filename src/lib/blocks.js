@@ -93,12 +93,16 @@ const volAvg = coin => series(coin, 'vavg20', () => {
   return out
 })
 
-/** BTC lookup by timestamp, built once per dataset. */
-export function btcContext(data) {
-  if (data.btcCtx) return data.btcCtx
-  const btc = data.coins.find(c => c.base === 'BTC')
+/** The market leader each asset is judged against: Bitcoin for crypto, the index fund for shares. */
+export const LEADERS = { '': 'BTC', US: 'SPY', ASX: 'STW.AX' }
+
+/** Leader lookup by timestamp, built once per dataset and market. */
+export function btcContext(data, market = '') {
+  data.leaderCtx ||= {}
+  if (data.leaderCtx[market]) return data.leaderCtx[market]
+  const btc = data.coins.find(c => c.base === LEADERS[market])
   const idx = new Map(btc ? btc.t.map((t, i) => [t, i]) : [])
-  return (data.btcCtx = { btc, idx })
+  return (data.leaderCtx[market] = { btc, idx })
 }
 
 /** F = features(coin) from lab.js (dvol, ratio). */
@@ -116,7 +120,7 @@ export function comboSignal(spec, coin, F, i, data) {
       case 'quiet': if (!(F.ratio[i] < 0.8)) return false; break
       case 'loud': if (!(F.ratio[i] > 1.25)) return false; break
       case 'btcUp': case 'btcDown': {
-        const { btc, idx } = btcContext(data)
+        const { btc, idx } = btcContext(data, coin.market || '')
         const j = btc ? idx.get(coin.t[i]) : undefined
         if (j == null) return false
         const up = btc.c[j] > sma(btc, k.n)[j]

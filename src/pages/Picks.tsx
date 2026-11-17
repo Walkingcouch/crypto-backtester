@@ -134,7 +134,7 @@ export default function Picks() {
                   <div className="pick-amt">
                     <div className="pick-w">{pct0(a.weight)}</div>
                     <div className="pick-money">{money(a.weight * budget)}</div>
-                    <div className="pick-links"><Link to={`/predict?coin=${a.base}USDT`}>Predict</Link><Link to={`/?coin=${a.base}USDT`}>Test</Link></div>
+                    <div className="pick-links"><Link to={`/predict?coin=${a.base}USDT`}>Predict</Link></div>
                   </div>
                 </div>
               ))}

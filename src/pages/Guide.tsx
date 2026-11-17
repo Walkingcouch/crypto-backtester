@@ -8,31 +8,27 @@ export default function Guide() {
           <h1>How it works</h1>
           <p>How to use the backtester, how to read the results, and the rules that keep you from fooling yourself.</p>
           <div className="toc">
-            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#picks">Picks</a><a href="#lab">Lab</a><a href="#read">Reading results</a>
+            <a href="#what">What it is</a><a href="#quick">Quick start</a><a href="#exchange">Your exchange</a><a href="#markets">Markets</a><a href="#predict">Predictions</a><a href="#picks">Picks</a><a href="#lab">Crypto lab</a><a href="#shares">Shares lab</a><a href="#read">Reading results</a>
             <a href="#rules">The rules</a><a href="#unseen">Final check</a><a href="#accounts">Accounts</a>
             <a href="#own">Your own strategies</a><a href="#next">Next steps</a><a href="#faq">FAQ</a>
           </div>
         </div>
 
         <h2 id="what">What it is</h2>
-        <p>A tool for testing clearly defined crypto trading strategies on past prices before risking real money. It does
-          not trade, connect to your exchange, or need any API keys. Everything runs in your browser.</p>
-        <p>The idea: start with a simple trend-following baseline, then require every new feature (including AI-generated ideas)
-          to beat it on data it has <b>never seen</b>. Weak ideas get rejected before they cost you anything.</p>
+        <p>A personal research site for crypto and shares: live market rankings, honest price-range forecasts with their own track record, and labs that paper-trade with pretend money to see which rules actually hold up after fees. It never places real orders, connects to your exchange, or needs API keys.</p>
+        <p>The idea: every rule has to prove itself on data it has <b>never seen</b>, and after real costs, before it's trusted. Weak ideas get rejected before they cost you anything.</p>
 
         <h2 id="quick">Quick start</h2>
         <ol className="steps">
-          <li><b>Open the <Link to="/">Test</Link> page.</b> Tap a coin (Bitcoin is a good start).</li>
-          <li><b>Pick a strategy.</b> Start with <i>Follow the trend</i> — it's the baseline every other idea has to beat. Tap "Exact rules" to see precisely when it buys and sells.</li>
-          <li><b>Choose a starting amount and your fee.</b> "Exchange order" (~0.1%) if you place orders on an exchange, "App instant buy" (~1%) if you use a buy button in an app. Fees matter a lot.</li>
-          <li><b>Press the big Test button.</b> You'll see what your money would have become on older prices, next to simply buying and holding, plus a plain-English verdict.</li>
-          <li><b>Try a few strategies</b> on the older prices if you like. That's free.</li>
-          <li><b>Run the final check</b> when you're happy. The strategy is tested once on recent prices it has never seen. This is the result that counts, and it's recorded in <Link to="/history?tab=checks">History</Link>.</li>
-          <li><b>Save the result</b> to compare later or share with your partner.</li>
+          <li><b>Browse <Link to="/markets">Markets</Link>.</b> Rank coins by return, risk or volume and compare up to 8 on one chart.</li>
+          <li><b>Check a coin on <Link to="/predict">Predict</Link>.</b> See the realistic price range for the next week to 3 months, and how often the method has been right.</li>
+          <li><b>See today's <Link to="/picks">Picks</Link>.</b> Coins whose past signals have held up, with a suggested stop-loss.</li>
+          <li><b>Watch the labs.</b> The <Link to="/lab">Crypto lab</Link> and the <Link to="/shares">Shares lab</Link> each paper-trade three ways (swing rules, new ideas, day trading) and show exactly what they did and why.</li>
+          <li><b>Tap the refresh button</b> (top right) for the latest numbers, handy when the site is saved to your phone's home screen.</li>
         </ol>
 
         <h2 id="exchange">Your exchange (e.g. CoinSpot) and currency</h2>
-        <p>Pick where you actually trade, so the numbers match what you'd really pay. On the Test page it's question 4, <b>Where do you trade?</b>; on Markets it's the <b>Your exchange</b> dropdown. Your choice is remembered.</p>
+        <p>Pick where you actually trade, so the numbers match what you'd really pay: on Markets it's the <b>Your exchange</b> dropdown. Your choice is remembered.</p>
         <ul>
           <li><b>CoinSpot:</b> <i>Market / limit order</i> 0.1% per trade, or <i>Instant buy / sell</i> 1% (the quick Buy button). Markets shows CoinSpot's own live AUD prices and, by default, only coins listed on CoinSpot.</li>
           <li><b>Swyftx</b> 0.6% · <b>Independent Reserve</b> 0.5% · <b>BTC Markets</b> 0.85% (AUD markets, lowest tier) · <b>Kraken Pro</b> 0.80% market / 0.40% limit (lowest tier) · <b>Coinbase Advanced</b> 0.6% market / 0.4% limit (lowest tier) · <b>Binance</b> 0.1%.</li>
@@ -54,10 +50,10 @@ export default function Guide() {
           <li><b>Price range</b>: enter a Min price and a Max price to only see coins priced between them. Leave either box empty for no limit.</li>
           <li><b>Filter</b> by minimum daily volume to hide tiny, illiquid coins (the default hides coins trading under $1M a day), or show only uptrends or downtrends.</li>
           <li><b>Tap coins</b> (up to 8) to compare them on one chart. Every line starts at 0% so a $0.001 coin and a $60,000 coin compare fairly.</li>
-          <li><b>Backtest →</b> on any row opens that coin on the Test page.</li>
+          <li><b>Predict</b> on any row opens that coin's price-range forecast.</li>
         </ul>
         <p>Stablecoins and leveraged tokens are left out. Coins listed recently show "new" for periods longer than their history.
-          A coin topping the list recently says nothing reliable about the next month. Use the Test page to check whether a rule would have worked.</p>
+          A coin topping the list recently says nothing reliable about the next month. The labs show which rules have actually held up.</p>
 
         <h2 id="predict">Predictions</h2>
         <p>Pick a coin from the quick buttons or the full coin list (the same ranking, filters, price range and where-to-buy badges as Markets). The <Link to="/predict">Predict</Link> page then estimates where a coin's price could be in <b>7 days, 14 days, 1 month or 3 months</b> (pick from the dropdown). It never claims to know the direction. It tells you how wide the realistic range is, and shows its own track record so you can judge how far to trust it.</p>
@@ -104,6 +100,16 @@ export default function Guide() {
         <p>A second lab, under <Link to="/lab/explore">Lab → New ideas</Link>, invents strategies rather than picking from a fixed menu. It combines building blocks (new highs, moving averages, momentum, dips, volume spikes, calm or wild markets, Bitcoin's own trend) into rules of one to three conditions, keeps the best 40, and each run breeds about 40 more: random new ones, small changes to the best, and mixes of two good ones. Ideas are ranked on older data only. Because trying thousands of ideas guarantees some look great by luck, the bar an idea must clear rises with the number tried, and each idea gets a single look at the held-back last 180 days. Ideas that pass trade on paper exactly like the main Lab.</p>
         <h3>Lab: day trading</h3>
         <p><Link to="/lab/daytrade">Lab → Day trading</Link> tests 42 intraday rules on 1-hour candles for the 10 most-traded coins, all closed by 00:00 UTC (9:30am Darwin): intraday momentum (Shen, Urquhart &amp; Wang, 2022), overreaction reversal (Wen, Bouri, Xu &amp; Zhao, 2022), opening-range and volatility breakouts, and calm-market mean reversion, each with and without a daily-trend filter. On top of the main Lab's checks it runs a walk-forward test: each month it picks the rule that looked best over the previous 120 days and records what that rule actually earned the next month. Stops are checked on every hourly candle, at most 0.5% of an account is at risk per trade, and a 2% fall in a day stops new trades until the next day. Costs decide almost everything here: Coinbase Advanced at 0.6% each way needs more than 1.2% a trade just to break even.</p>
+
+        <h2 id="shares">Shares lab (US &amp; ASX)</h2>
+        <p>The <Link to="/shares">Shares lab</Link> runs the same three paper-trading labs on shares, at Interactive Brokers' real fees: the broker picked for running a bot from Australia (a full trading API that can place orders unattended, US and ASX shares in one account, and a free paper-trading account). It places no real orders.</p>
+        <ul>
+          <li><b>Swing rules</b>: the crypto lab's 39 rules on about 5 years of daily prices for 27 large US shares and index funds and 24 large ASX shares and ETFs, re-tested weekly. It runs after each close (4:00pm Darwin for the ASX, 7:00am Darwin for the US).</li>
+          <li><b>New ideas</b>: the idea factory on the same shares. "Bitcoin's trend" becomes the market's own trend: the S&amp;P 500 for US shares, the ASX 200 for ASX shares.</li>
+          <li><b>Day trading</b>: 34 rules on hourly bars (intraday momentum, gap-down fill, opening-range and volatility breakouts, overreaction reversal), every position sold by that market's close. It checks every half hour while a market is open, and practises on paper while no rule passes.</li>
+          <li><b>Fees</b>: US shares US$0.0035 a share (minimum US$0.35 an order) plus exchange fees; ASX shares 0.08% plus GST (minimum A$5.50 an order). Minimums make small orders expensive, so share accounts start at A$10,000, and the US day-trading account at A$40,000 because US brokers limit accounts under US$25,000 to 3 day trades in 5 days.</li>
+          <li><b>Caveats</b>: prices are Yahoo Finance's (daily prices adjusted for splits and dividends), the share lists are today's big companies (which flatters past results a little), and currency conversion fees aren't counted.</li>
+        </ul>
 
         <h2 id="read">Reading results</h2>
         <ul>

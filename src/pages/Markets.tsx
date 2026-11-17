@@ -87,7 +87,6 @@ export default function Markets() {
                   <span className={cls(c ? retIn(c, period) : null)}>{pctTxt(c ? retIn(c, period) : null)}</span>
                   <WhereToBuy base={b} where={where(b)} known={listings?.ok ?? null} partial={listings?.partial} compact />
                   <Link to={`/predict?coin=${b}USDT`} className="small">Predict</Link>
-                  <Link to={`/?coin=${b}USDT`} className="small">Test</Link>
                   <button aria-label={`Remove ${b}`} onClick={() => toggle(b)}>×</button>
                 </span>
               )

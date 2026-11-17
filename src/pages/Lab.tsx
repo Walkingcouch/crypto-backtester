@@ -5,7 +5,8 @@ import { fmtMoney, useCurrency } from '../lib/currency'
 import { estimate, feeFrac, LAB, type LabRule, type LabState } from '../lib/lab'
 import { EXPLORE, hurdle } from '../lib/explorer'
 import { DT } from '../lib/daytrade'
-import { STOCK, US, ASX } from '../lib/stocks'
+import { STOCK, STOCK_EXPLORE, US, ASX } from '../lib/stocks'
+import { SDT, US_DAY, ASX_DAY } from '../lib/stockday'
 import { supabase } from '../lib/supabase'
 import { fmtPrice } from '../lib/markets'
 
@@ -16,6 +17,7 @@ const day = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'sho
 const cls = (x: number) => (x > 0 ? 'pos' : x < 0 ? 'neg' : '')
 const KIND: Record<string, string> = { promote: 'Promoted', rollback: 'Rolled back', challenger: 'New challenger', retire: 'Retired', trade: 'Trade', note: 'Note' }
 const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8', binance: '#d99a1e', ibus: '#3b6fd8', ibasx: '#d99a1e' }
+type Family = 'crypto' | 'shares'
 
 function liveRecord(r: LabRule) {
   const g = (r.live?.trades ?? []).map(t => t.g)
@@ -48,7 +50,8 @@ function BalanceChart({ state }: { state: LabState }) {
 
 type Settings = typeof LAB
 interface Variant {
-  key: 'swing' | 'explore' | 'day' | 'stocks'; sid: string; api: string; S: Settings
+  key: 'swing' | 'explore' | 'day' | 'sswing' | 'sexplore' | 'sday'; kind: 'swing' | 'explore' | 'day'; family: Family
+  sid: string; api: string; S: Settings
   title: string; intro: ReactNode; howto: [string, string][]
   unit: string; every: string; noRule: string; tested: ReactNode; stops: ReactNode
 }
@@ -63,8 +66,8 @@ const STOPS_SWING = (S: Settings, H?: number) => (<ul>
 </ul>)
 
 const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Settings, H?: number) => ReactNode }> = {
-  stocks: {
-    key: 'stocks', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Lab · US & ASX shares', unit: 'trading days', every: 'after each market closes (4:00pm Darwin for the ASX, 7:00am Darwin for the US)',
+  sswing: {
+    key: 'sswing', kind: 'swing', family: 'shares', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Swing rules', unit: 'trading days', every: 'after each market closes (4:00pm Darwin for the ASX, 7:00am Darwin for the US)',
     intro: <>The same swing-trading loop as the crypto Lab, on {US.length} large US shares and index funds and {ASX.length} large ASX shares and ETFs. It picks from the same 39 rules, trades the best on paper, and swaps rules only when one proves itself. Fees are Interactive Brokers' real prices, the broker picked for running a bot from Australia.</>,
     howto: [['Two A$10,000 accounts', "One trades US shares, one trades ASX shares, both at Interactive Brokers. Bigger than the crypto accounts because each order has a minimum fee (A$5.50 on the ASX), which eats small trades."],
       ['Only trades worth the cost', 'The same cost gate: it buys only when the expected gain beats the brokerage, price gap and slippage on that order size, with room to spare.'],
@@ -78,8 +81,39 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
       <li><b>Size by the stop:</b> each position loses at most about {pct0(S.riskPerTrade)} of the account at its stop. No more than {pct0(S.maxPosition)} in one share, {S.maxOpen} at once, at least {pct0(1 - S.maxInvested)} in cash.</li>
     </ul>),
   },
+  sexplore: {
+    key: 'sexplore', kind: 'explore', family: 'shares', sid: 'stocks-explore', api: '/api/stocks-explorer-cron?dry=1', S: STOCK_EXPLORE as unknown as Settings, title: 'New ideas', unit: 'trading days', every: 'after each market closes (4:10pm Darwin for the ASX, 7:10am Darwin for the US)',
+    intro: <>The idea factory from the crypto lab, on the same {US.length} US and {ASX.length} ASX shares: it combines building blocks (new highs, moving averages, momentum, dips, volume spikes, calm or wild markets, and the market's own trend: the S&amp;P 500 for US shares, the ASX 200 for ASX shares) into new rules, keeps the fittest and breeds variations. Only ideas that pass an honest check trade on paper.</>,
+    howto: [['Invent and breed', 'Each run adds about 100 new ideas: random new ones, small changes to the best so far, and mixes of two good ones.'],
+      ['A bar that rises', 'The more ideas tried, the higher the bar, and each idea gets just one look at the held-back last 180 days.'],
+      ['Graduates trade on paper', "Ideas that pass go to two A$10,000 Interactive Brokers accounts (US and ASX), with the same cost gate, stop-losses and rollback rules."]],
+    noRule: 'No invented idea has passed the checks yet. Most ideas fail, and the ones that pass need to clear a high bar.',
+    tested: <>Graduates only: invented ideas that cleared the rising bar on older data and then made money after costs on the held-back last {STOCK_EXPLORE.validDays} days.</>,
+    stops: (S: Settings, H?: number) => (<ul>
+      <li><b>Distance:</b> set by each idea: 1.5, 2.5 or 3.5 times the share's typical move over the hold, between 5% and 25% below the buy price.</li>
+      <li><b>Checked once a day</b> at the close. A share that gaps down overnight can sell below its stop.</li>
+      <li><b>Time limit:</b> sold when the idea's holding period ends ({H ? `${H} trading days for the current rule` : 'set by the idea'}), win or lose.</li>
+      <li><b>Size by the stop:</b> each position loses at most about {pct0(S.riskPerTrade)} of the account at its stop. No more than {pct0(S.maxPosition)} in one share, {S.maxOpen} at once.</li>
+    </ul>),
+  },
+  sday: {
+    key: 'sday', kind: 'day', family: 'shares', sid: 'stocks-day', api: '/api/stocks-day-cron?dry=1', S: SDT as unknown as Settings, title: 'Day trading', unit: 'hours', every: 'every half hour while a market is open',
+    intro: <>Day-trading rules from published research on 1-hour bars of {US_DAY.length} liquid US shares and funds and {ASX_DAY.length} big ASX shares. Every position is sold by that market's close (US 4:00pm New York, ASX 4:00pm Sydney). Same honest loop as the crypto day-trading lab, at Interactive Brokers' fees.</>,
+    howto: [['Five research-backed families', 'Intraday momentum (the first hour predicts the last), gap-down fill, opening-range breakout, volatility breakout and overreaction reversal, each with and without a daily-trend filter (34 rules).'],
+      ['US needs US$25,000', "US brokers, Interactive Brokers included, limit margin accounts under US$25,000 to 3 day trades in 5 days. So the US account starts at A$40,000; the ASX account at A$10,000."],
+      ['Tight limits', `Stops on every trade, at most ${(SDT.riskPerTrade * 100).toFixed(1)}% of the account at risk per trade, and no new trades for the rest of the day after a ${pct0(SDT.dailyLossLimit)} drop.`]],
+    noRule: 'No day-trading rule passed both checks after costs. That is the most common honest result: most published intraday edges are smaller than the cost of trading them.',
+    tested: <>Each rule was tried on about 2¾ years of hourly bars. To pass: at least {SDT.minTrain} trades and a t-score of {SDT.minTrainT}+ after {pct(SDT.refCost)} costs a trade on the older data, and still profitable on the last {SDT.validDays} days.</>,
+    stops: (S: Settings) => (<ul>
+      <li><b>Distance:</b> 2 times the share's typical hourly move over the planned hold, between 0.5% and 4% below the buy price.</li>
+      <li><b>Checked on every hourly bar</b> since the buy, including gaps: if a bar opens below the stop, the sale happens at that open.</li>
+      <li><b>Market close:</b> everything is sold at that market's close, win or lose. Some rules sell earlier, after a set number of hours.</li>
+      <li><b>Risk per trade:</b> each position loses at most about {(S.riskPerTrade * 100).toFixed(1)}% of the account at its stop; at most {pct0(S.maxPosition)} in one share and {S.maxOpen} positions at once.</li>
+      <li><b>Daily loss limit:</b> after a {pct0(SDT.dailyLossLimit)} fall in a day, no new trades until the next day.</li>
+    </ul>),
+  },
   swing: {
-    key: 'swing', sid: 'main', api: '/api/lab-cron?dry=1', S: LAB, title: 'Lab · swing rules', unit: 'days', every: 'every 2 hours',
+    key: 'swing', kind: 'swing', family: 'crypto', sid: 'main', api: '/api/lab-cron?dry=1', S: LAB, title: 'Swing rules', unit: 'days', every: 'every 2 hours',
     intro: <>A paper-trading bot that picks from a fixed menu of 39 swing-trading rules (held 3–20 days), trades the best one with pretend money, and swaps in a better rule only when one proves itself.</>,
     howto: [['Three accounts, one rule', "A$1,000 each on CoinSpot, Coinbase Advanced and Binance. Differences come from each exchange's fees and coins."],
       ['Only trades worth the cost', "Mark's cost gate: it buys only when the expected gain beats the fees and price gap with room to spare."],
@@ -89,7 +123,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
     stops: STOPS_SWING,
   },
   explore: {
-    key: 'explore', sid: 'explorer', api: '/api/explorer-cron?dry=1', S: EXPLORE as Settings, title: 'Lab · new ideas', unit: 'days', every: 'every 2 hours',
+    key: 'explore', kind: 'explore', family: 'crypto', sid: 'explorer', api: '/api/explorer-cron?dry=1', S: EXPLORE as Settings, title: 'New ideas', unit: 'days', every: 'every 2 hours',
     intro: <>This lab invents strategies the other one never had: it combines building blocks (breakouts, trends, dips, volume spikes, calm or wild markets, Bitcoin's own trend) into new rules, keeps the fittest, and breeds variations of them. Only ideas that pass an honest check get to trade on paper.</>,
     howto: [['Invent and breed', 'Each run adds about 40 new ideas: random new ones, small changes to the best so far, and mixes of two good ones.'],
       ['A bar that rises', 'Try enough ideas and some look great by luck. So the bar an idea must clear rises with the number tried, and each idea gets just one look at the held-back last 180 days.'],
@@ -99,7 +133,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
     stops: STOPS_SWING,
   },
   day: {
-    key: 'day', sid: 'daytrade', api: '/api/daytrade-cron?dry=1', S: DT as unknown as Settings, title: 'Lab · day trading', unit: 'hours', every: 'every hour',
+    key: 'day', kind: 'day', family: 'crypto', sid: 'daytrade', api: '/api/daytrade-cron?dry=1', S: DT as unknown as Settings, title: 'Day trading', unit: 'hours', every: 'every hour',
     intro: <>Tests day-trading rules from published research on 1-hour candles, and closes every position by the end of the day (00:00 UTC, 9:30am Darwin). Same honest loop as the main Lab, plus a walk-forward test and a daily loss limit. Expect most rules to fail once costs are counted.</>,
     howto: [['Five research-backed families', "Intraday momentum, overreaction reversal, opening-range breakout, volatility breakout and calm-market mean reversion, each with and without a daily-trend filter (42 rules)."],
       ['Costs decide everything', 'A day trade must beat a full buy and sell. On Coinbase at 0.6% each way that is 1.2%+ a trade, so its account will rarely trade.'],
@@ -117,15 +151,18 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
 }
 
 export function LabSwing() { return <LabView v={VARIANTS.swing} /> }
-export function LabStocks() { return <LabView v={VARIANTS.stocks} /> }
+export function SharesSwing() { return <LabView v={VARIANTS.sswing} /> }
+export function SharesExplore() { return <LabView v={VARIANTS.sexplore} /> }
+export function SharesDay() { return <LabView v={VARIANTS.sday} /> }
 export function LabExplore() { return <LabView v={VARIANTS.explore} /> }
 export function LabDay() { return <LabView v={VARIANTS.day} /> }
 export default LabSwing
 
 /** The rule engine says "coin"; on the shares lab, say "share". */
-function words(st: LabState, key: string): LabState {
-  if (key !== 'stocks' || !st) return st
+function words(st: LabState, family: Family): LabState {
+  if (family !== 'shares' || !st) return st
   const w = (t: string) => t.replace(/\bcoins\b/g, 'shares').replace(/\bcoin\b/g, 'share').replace(/\.AX\b/g, '')
+    .replace(/Bitcoin is above/g, 'the market index is above').replace(/Bitcoin is below/g, 'the market index is below').replace(/\bBitcoin\b/g, 'the market index')
   for (const r of st.rules) r.text = w(r.text)
   for (const e of st.events) e.text = w(e.text)
   for (const f of st.found ?? []) f.text = w(f.text)
@@ -133,15 +170,13 @@ function words(st: LabState, key: string): LabState {
   return st
 }
 
-function LabTabs() {
+function LabTabs({ family }: { family: Family }) {
+  const base = family === 'crypto' ? '/lab' : '/shares'
   return (
     <div className="lab-tabs">
-      <span className="lab-tabs-group">Crypto</span>
-      <NavLink to="/lab" end>Swing rules</NavLink>
-      <NavLink to="/lab/explore">New ideas</NavLink>
-      <NavLink to="/lab/daytrade">Day trading</NavLink>
-      <span className="lab-tabs-group">Shares</span>
-      <NavLink to="/lab/stocks">US &amp; ASX</NavLink>
+      <NavLink to={base} end>Swing rules</NavLink>
+      <NavLink to={`${base}/explore`}>New ideas</NavLink>
+      <NavLink to={`${base}/daytrade`}>Day trading</NavLink>
     </div>
   )
 }
@@ -160,12 +195,12 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
       try {
         if (supabase) {
           const { data } = await supabase.from('lab_state').select('data').eq('id', v.sid).maybeSingle()
-          if (data?.data) { if (alive) setState(words(data.data as LabState, v.key)); return }
+          if (data?.data) { if (alive) setState(words(data.data as LabState, v.family)); return }
         }
         const r = await fetch(v.api)
         const j = await r.json()
         if (j.error) throw new Error(j.error)
-        if (alive) { setState(words(j.state, v.key)); setPreview(true) }
+        if (alive) { setState(words(j.state, v.family)); setPreview(true) }
       } catch (e) { if (alive) setError(`Couldn't load the Lab: ${e instanceof Error ? e.message : e}`) }
     })()
     return () => { alive = false }
@@ -181,14 +216,15 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
   const changes = useMemo(() => (state?.events ?? []).filter(e => e.kind !== 'trade').slice(-3).reverse(), [state])
   const trades = useMemo(() => (state?.events ?? []).filter(e => e.kind === 'trade').slice(-12).reverse(), [state])
   const accts = state ? Object.values(state.accounts) : []
-  const shares = v.key === 'stocks'
+  const shares = v.family === 'shares'
   const noun = shares ? 'share' : 'coin'
 
   return (
     <main className="page narrow">
       <div className="page-head">
-        <LabTabs />
+        <div className="lab-family">{v.family === 'crypto' ? 'Crypto lab' : 'Shares lab · US & ASX'}</div>
         <h1>{v.title}</h1>
+        <LabTabs family={v.family} />
         <p>{v.intro} It runs on its own {v.every}. Nothing here places real orders.</p>
         <div className="howto">
           {v.howto.map(([b, t], k) => <div key={k}><span className="n">{k + 1}</span><b>{b}</b>{t}</div>)}
@@ -312,12 +348,12 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             </Disclosure>}
           </section>
 
-          {v.key === 'explore' && <ExploreCard state={state} />}
-          {v.key === 'day' && <WalkCard state={state} />}
+          {v.kind === 'explore' && <ExploreCard state={state} />}
+          {v.kind === 'day' && <WalkCard state={state} costs={shares ? "Interactive Brokers' US costs" : 'Binance-level costs'} />}
 
           {state.found && (
             <section className="card">
-              <Disclosure title={<b>{v.key === 'explore' ? `Graduated ideas (${state.found.length})` : `All ${state.found.length} rules tested`}</b>}>
+              <Disclosure title={<b>{v.kind === 'explore' ? `Graduated ideas (${state.found.length})` : `All ${state.found.length} rules tested`}</b>}>
                 <p className="muted small">{v.tested}</p>
                 <div className="table-wrap"><table className="record">
                   <thead><tr><th>Rule</th><th>Older data</th><th>Last {S.validDays} days</th><th>Passed</th></tr></thead>
@@ -393,13 +429,13 @@ function ExploreCard({ state }: { state: LabState }) {
 
 interface WalkState { months: { start: number; rule: string | null; n: number; mean: number; sum: number }[]; total: { n: number; mean: number; t: number; win: number } }
 
-function WalkCard({ state }: { state: LabState }) {
+function WalkCard({ state, costs }: { state: LabState; costs: string }) {
   const w = (state as unknown as { walk?: WalkState }).walk
   if (!w) return null
   return (
     <section className="card">
       <h2>Walk-forward test <Info>Each month, the bot picks the rule that looked best over the previous 120 days only, then records what it actually earned that month. Stitched together, this is what the whole selection process would have made, with no hindsight.</Info></h2>
-      <p className="muted small" style={{ marginTop: 0 }}>{w.total.n ? <>Following the process would have averaged <b className={cls(w.total.mean)}>{pct(w.total.mean, 2)}</b> a trade after Binance-level costs over {w.total.n} trades ({pct0(w.total.win)} won).</> : 'Not enough history yet.'}</p>
+      <p className="muted small" style={{ marginTop: 0 }}>{w.total.n ? <>Following the process would have averaged <b className={cls(w.total.mean)}>{pct(w.total.mean, 2)}</b> a trade after {costs} over {w.total.n} trades ({pct0(w.total.win)} won).</> : 'Not enough history yet.'}</p>
       <div className="table-wrap"><table className="record">
         <thead><tr><th>Month from</th><th style={{ textAlign: 'left' }}>Rule chosen</th><th>Trades</th><th>Avg a trade</th></tr></thead>
         <tbody>{w.months.slice().reverse().map(m => (

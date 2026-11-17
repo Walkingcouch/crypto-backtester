@@ -451,6 +451,9 @@ table.record td:first-child { white-space: nowrap; }
 .gate-line b { color: var(--text); font-weight: 600; white-space: nowrap; }
 .lab-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .lab-tabs a { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--border); color: var(--muted); font-weight: 600; font-size: 14px; text-decoration: none; }
-.lab-tabs-group { align-self: center; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 0 2px 0 8px; }
-.lab-tabs-group:first-child { margin-left: 0; }
+.lab-family { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
 .lab-tabs a.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+.refresh-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface, transparent); color: var(--muted); cursor: pointer; }
+.refresh-btn:active { transform: rotate(-30deg); }
+.refresh-btn:hover { color: var(--accent); border-color: var(--accent); }

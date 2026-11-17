@@ -129,8 +129,7 @@ export default function CoinTable({ M, mode, selected, onRow, colorOf, onPeriod 
                 <span className="r hide-sm">{c.vol30 != null ? `${(c.vol30 * 100).toFixed(0)}%` : '—'}</span>
                 <span className="r hide-sm">{fmtVol(c.quoteVolume * (M.rate ?? 1), M.sym)}</span>
                 <span className="hide-sm r row-links">
-                  {mode === 'compare' && <Link to={`/predict?coin=${c.symbol}`} onClick={e => e.stopPropagation()} className="small">Predict</Link>}
-                  <Link to={`/?coin=${c.symbol}`} onClick={e => e.stopPropagation()} className="small">Test</Link>
+                  {<Link to={`/predict?coin=${c.symbol}`} onClick={e => e.stopPropagation()} className="small">Predict</Link>}
                 </span>
               </div>
             )

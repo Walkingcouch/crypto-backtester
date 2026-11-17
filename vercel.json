@@ -29,6 +29,12 @@
     },
     "api/stocks-cron.js": {
       "maxDuration": 300
+    },
+    "api/stocks-explorer-cron.js": {
+      "maxDuration": 300
+    },
+    "api/stocks-day-cron.js": {
+      "maxDuration": 300
     }
   },
   "headers": [
@@ -58,6 +64,14 @@
     {
       "path": "/api/stocks-cron",
       "schedule": "30 6,21 * * *"
+    },
+    {
+      "path": "/api/stocks-explorer-cron",
+      "schedule": "40 6,21 * * *"
+    },
+    {
+      "path": "/api/stocks-day-cron",
+      "schedule": "5,35 * * * *"
     }
   ]
 }

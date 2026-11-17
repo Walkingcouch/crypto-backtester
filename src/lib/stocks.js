@@ -34,3 +34,13 @@ export const STOCK = {
   refCost: 0.004,         // round trip used when choosing rules (fees, spread, slippage)
   daysPerBar: 1.4,        // 5 trading days a week: a 10-day hold is about 14 calendar days
 }
+
+// The idea factory (explorer.js) on the same shares and accounts. "Bitcoin's trend" becomes the
+// market's own trend: the S&P 500 fund (SPY) for US shares, the ASX 200 fund (STW) for ASX shares.
+import { EXPLORE } from './explorer.js'
+export const STOCK_EXPLORE = {
+  ...EXPLORE,
+  accounts: STOCK_ACCOUNTS,
+  margin: STOCK.margin, slippage: STOCK.slippage, maxPosition: STOCK.maxPosition, maxOpen: STOCK.maxOpen,
+  maxInvested: STOCK.maxInvested, refCost: STOCK.refCost, daysPerBar: STOCK.daysPerBar,
+}

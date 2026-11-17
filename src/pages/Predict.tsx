@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import FanChart, { OutcomeBars } from '../components/FanChart'
 import { Info } from '../components/Info'
 import Chatter, { type ChatterData } from '../components/Chatter'
@@ -425,8 +425,7 @@ export default function Predict() {
               <button className="btn btn-primary btn-sm" onClick={() => compareRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Compare chart</button>
             </div>
           )}
-          <p className="hint center">These are statistics about how {base} has moved before, not promises, and not financial advice.
-            Want to know if a rule would have made money? <Link to={`/?coin=${symbol}`}>Backtest {base} →</Link></p>
+          <p className="hint center">These are statistics about how {base} has moved before, not promises, and not financial advice.</p>
         </>
       )}
     </main>
