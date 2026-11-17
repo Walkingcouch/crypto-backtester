@@ -64,7 +64,7 @@ export default function App() {
       <footer className="footer">
         <div className="page">
           Backtests are simulations on past prices, not predictions, and nothing here is financial advice.
-          Price data: Binance public market data.
+          Price data: Binance public market data (crypto) and Yahoo Finance (shares).
         </div>
       </footer>
     </>

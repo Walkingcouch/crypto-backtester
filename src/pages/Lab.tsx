@@ -64,7 +64,7 @@ const STOPS_SWING = (S: Settings, H?: number) => (<ul>
 
 const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Settings, H?: number) => ReactNode }> = {
   stocks: {
-    key: 'stocks', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Lab · US & ASX shares', unit: 'trading days', every: 'after each market closes (4:00pm Darwin for the ASX, 8:00am Darwin for the US)',
+    key: 'stocks', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Lab · US & ASX shares', unit: 'trading days', every: 'after each market closes (4:00pm Darwin for the ASX, 7:00am Darwin for the US)',
     intro: <>The same swing-trading loop as the crypto Lab, on {US.length} large US shares and index funds and {ASX.length} large ASX shares and ETFs. It picks from the same 39 rules, trades the best on paper, and swaps rules only when one proves itself. Fees are Interactive Brokers' real prices, the broker picked for running a bot from Australia.</>,
     howto: [['Two A$10,000 accounts', "One trades US shares, one trades ASX shares, both at Interactive Brokers. Bigger than the crypto accounts because each order has a minimum fee (A$5.50 on the ASX), which eats small trades."],
       ['Only trades worth the cost', 'The same cost gate: it buys only when the expected gain beats the brokerage, price gap and slippage on that order size, with room to spare.'],
@@ -122,6 +122,17 @@ export function LabExplore() { return <LabView v={VARIANTS.explore} /> }
 export function LabDay() { return <LabView v={VARIANTS.day} /> }
 export default LabSwing
 
+/** The rule engine says "coin"; on the shares lab, say "share". */
+function words(st: LabState, key: string): LabState {
+  if (key !== 'stocks' || !st) return st
+  const w = (t: string) => t.replace(/\bcoins\b/g, 'shares').replace(/\bcoin\b/g, 'share').replace(/\.AX\b/g, '')
+  for (const r of st.rules) r.text = w(r.text)
+  for (const e of st.events) e.text = w(e.text)
+  for (const f of st.found ?? []) f.text = w(f.text)
+  for (const a of Object.values(st.accounts)) for (const b of a.lastBlocked) b.why = w(b.why)
+  return st
+}
+
 function LabTabs() {
   return (
     <div className="lab-tabs">
@@ -149,12 +160,12 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
       try {
         if (supabase) {
           const { data } = await supabase.from('lab_state').select('data').eq('id', v.sid).maybeSingle()
-          if (data?.data) { if (alive) setState(data.data as LabState); return }
+          if (data?.data) { if (alive) setState(words(data.data as LabState, v.key)); return }
         }
         const r = await fetch(v.api)
         const j = await r.json()
         if (j.error) throw new Error(j.error)
-        if (alive) { setState(j.state); setPreview(true) }
+        if (alive) { setState(words(j.state, v.key)); setPreview(true) }
       } catch (e) { if (alive) setError(`Couldn't load the Lab: ${e instanceof Error ? e.message : e}`) }
     })()
     return () => { alive = false }
