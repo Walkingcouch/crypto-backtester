@@ -6,6 +6,7 @@ import { extractText, getDocumentProxy } from 'unpdf'
 import { merge, score } from './_lib/signals/schema.js'
 import { asx3Y, auPoliticians, centralBanks, cryptoDerivatives, housePTRs, secForm4, senatePTRs, truthSocial } from './_lib/signals/sources.js'
 import { weekCalendar } from './_lib/econ.js'
+import { backfillLedger, enrichOrders } from './_lib/signals/orders.js'
 import { rpc, sb } from './_lib/forecaster.js'
 import { ASX } from '../src/lib/stocks.js'
 
@@ -74,6 +75,14 @@ export default async function handler(req, res) {
   // politicians disclose slowly (Australian MPs can take months), so their trades are kept for a year
   const keep = s => now - s.disclosed_at < (s.category.startsWith('politician') ? 365 : 90) * DAY
   state.signals = score(list.filter(keep), now, ctx).slice(0, 1500)
+  // order details for politicians' trades: prices on trade dates, implied shares, sale results
+  state.ledger ||= {}
+  try {
+    await enrichOrders(state.signals, state.ledger)                    // prices + matches from what's known
+    const got = await backfillLedger(state.ledger, state.signals, { pdfText })   // read more past filings for unmatched sales
+    if (got.house || got.senate) await enrichOrders(state.signals, state.ledger)
+    status.orders = { ok: true, n: state.ledger.trades.length, note: `ledger ${state.ledger.trades.length} trades (+${got.house} House, +${got.senate} Senate filings read)` }
+  } catch (e) { status.orders = { ok: false, note: String(e.message || e).slice(0, 120) } }
   state.status = { ...state.status, ...status }
   state.lastRun = now
   let saved = null

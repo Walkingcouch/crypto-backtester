@@ -12,7 +12,7 @@
 //  - OKX public API: perpetual funding rates and open interest (Binance and Bybit block US servers).
 //  - Federal Reserve and RBA: statements scored hawkish / dovish.
 import { unzipSync, strFromU8 } from 'fflate'
-import { rangeMid } from './schema.js'
+import { rangeLoHi, rangeMid } from './schema.js'
 
 const HOUR = 3_600_000, DAY = 86_400_000
 const UA = 'Mozilla/5.0 (compatible; personal market research)'
@@ -30,7 +30,8 @@ const decode = s => (s || '').replace(/<!\[CDATA\[|\]\]>/g, '').replace(/&amp;/g
 const usDate = s => { const m = (s || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? Date.UTC(+m[3], +m[1] - 1, +m[2]) : null }
 
 // ------------------------------------------------------------------ US Senate (eFD)
-export async function senatePTRs({ days = 30, max = 25 } = {}) {
+/** A signed-in session (the site asks visitors to accept its terms of use before searching). */
+export async function senateSession() {
   const base = 'https://efdsearch.senate.gov'
   const jar = {}
   const cookie = () => Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ')
@@ -43,18 +44,19 @@ export async function senatePTRs({ days = 30, max = 25 } = {}) {
   const token = (home.match(/name="csrfmiddlewaretoken" value="([^"]+)"/) || [])[1]
   if (!token) throw new Error('senate: no form token')
   await req('/search/home/', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `prohibition_agreement=1&csrfmiddlewaretoken=${token}` })
-  const since = new Date(Date.now() - days * DAY)
   const fmt = d => `${String(d.getUTCMonth() + 1).padStart(2, '0')}/${String(d.getUTCDate()).padStart(2, '0')}/${d.getUTCFullYear()} 00:00:00`
-  const body = new URLSearchParams({ start: '0', length: String(max), report_types: '[11]', filer_types: '[]', submitted_start_date: fmt(since), submitted_end_date: '', candidate_state: '', senator_state: '', office_id: '', first_name: '', last_name: '', csrfmiddlewaretoken: jar.csrftoken || token })
-  const data = await (await req('/search/report/data/', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-csrftoken': jar.csrftoken || token }, body })).json()
-  const out = []
-  for (const row of data.data || []) {
-    const [first, last, , linkHtml, filed] = row
-    const href = (linkHtml.match(/href="([^"]+)"/) || [])[1]
-    if (!href || !href.includes('/ptr/')) continue           // paper (scanned) filings can't be read
-    const html = await (await req(href)).text()
-    const disclosedAt = usDate(filed) || Date.now()
-    const name = `Sen. ${decode(first)} ${decode(last)}`
+  /** Electronic PTR filings since a date, optionally for one senator. */
+  const search = async ({ since, first = '', last = '', max = 25 }) => {
+    const body = new URLSearchParams({ start: '0', length: String(max), report_types: '[11]', filer_types: '[]', submitted_start_date: fmt(new Date(since)), submitted_end_date: '', candidate_state: '', senator_state: '', office_id: '', first_name: first, last_name: last, csrfmiddlewaretoken: jar.csrftoken || token })
+    const data = await (await req('/search/report/data/', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-csrftoken': jar.csrftoken || token }, body })).json()
+    return (data.data || []).map(([f, l, , linkHtml, filed]) => ({ first: decode(f), last: decode(l), href: (linkHtml.match(/href="([^"]+)"/) || [])[1], filed: usDate(filed) }))
+      .filter(r => r.href && r.href.includes('/ptr/'))         // paper (scanned) filings can't be read
+  }
+  /** Every stock / fund transaction in one filing. */
+  const parse = async row => {
+    const html = await (await req(row.href)).text()
+    const name = `Sen. ${row.first} ${row.last}`
+    const out = []
     for (const tr of html.split(/<tr[\s>]/).slice(2)) {
       const td = tr.split(/<td[^>]*>/).slice(1).map(x => decode(x.split('</td>')[0]))
       if (td.length < 8) continue
@@ -62,48 +64,71 @@ export async function senatePTRs({ days = 30, max = 25 } = {}) {
       if (!/Stock|Fund|ETF/i.test(assetType) || !ticker || ticker === '--') continue
       const action = /Purchase/i.test(type) ? 'BUY' : /Sale/i.test(type) ? 'SELL' : null
       if (!action) continue
-      out.push({ source: 'US Senate eFD', sourceUrl: base + href, category: 'politician_us', entity_name: name, entity_role: `Senator (${owner || 'self'})`,
-        asset_ticker: ticker.replace(/[^A-Z.]/g, ''), asset_name: asset, market: 'US', action, trade_size_usd: rangeMid(amount), trade_date: usDate(date), disclosed_at: disclosedAt,
-        sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${name} ${action === 'BUY' ? 'bought' : 'sold'} ${asset} (${amount})` })
+      out.push({ source: 'US Senate eFD', sourceUrl: base + row.href, category: 'politician_us', entity_name: name, entity_role: `Senator (${owner || 'self'})`,
+        asset_ticker: ticker.replace(/[^A-Z.]/g, ''), asset_name: asset, market: 'US', action, partial: /partial/i.test(type),
+        trade_size_usd: rangeMid(amount), trade_size_range: rangeLoHi(amount), amount_text: amount, trade_date: usDate(date), disclosed_at: row.filed || Date.now(),
+        sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${name} ${action === 'BUY' ? 'bought' : /partial/i.test(type) ? 'partly sold' : 'sold'} ${asset} (${amount})` })
     }
-    await sleep(300)
+    return out
   }
+  return { search, parse }
+}
+
+export async function senatePTRs({ days = 30, max = 25 } = {}) {
+  const S = await senateSession()
+  const out = []
+  for (const row of await S.search({ since: Date.now() - days * DAY, max })) { out.push(...await S.parse(row)); await sleep(300) }
   return out
 }
 
 // ------------------------------------------------------------------ US House (Clerk PTR PDFs)
-export async function housePTRs({ days = 30, max = 12, pdfText } = {}) {
-  const year = new Date().getUTCFullYear()
-  const zip = unzipSync(await get(`https://disclosures-clerk.house.gov/public_disc/financial-pdfs/${year}FD.zip`, { binary: true }))
-  const txt = strFromU8(zip[`${year}FD.txt`] || Object.values(zip)[0])
-  const rows = txt.split(/\r?\n/).slice(1).map(l => l.split('\t')).filter(c => c[4] === 'P')
-  const recent = rows.map(c => ({ name: `Rep. ${c[2]} ${c[1]}`.replace(/\s+/g, ' ').trim(), district: c[5], filed: usDate(c[7]), doc: c[8] }))
-    .filter(r => r.filed && r.filed > Date.now() - days * DAY && /^2\d{7}$/.test(r.doc))           // 2xxxxxxx = filed electronically
-    .sort((a, b) => b.filed - a.filed).slice(0, max)
-  const out = []
-  for (const r of recent) {
-    const url = `https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/${year}/${r.doc}.pdf`
-    let text
-    try { text = await pdfText(await get(url, { binary: true })) } catch { continue }
-    // Layout (electronic PTRs): asset name on its own line(s), "(TICK) [ST]", then "P|S|S (partial)|E
-    // <trade date> <notification date> $a - $b", then labelled lines ("Filing status: New",
-    // "Subholding of: Charles Schwab …") that belong to that trade. Section headings come out as
-    // letters followed by NUL characters, which are removed first.
-    const clean = text.replace(/[A-Za-z]\u0000+/g, m => m[0]).replace(/\u0000/g, '')
-    const re = /\(([A-Z][A-Z.]{0,6})\)\s*\[(ST|EF|OP)\]\s*(P|S \(partial\)|S|E)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+(\$[\d,]+\s*-\s*\$[\d,]+|Over \$[\d,]+)/g
-    let m, prevEnd = clean.search(/\$200\?/) + 5
-    while ((m = re.exec(clean))) {
-      const before = clean.slice(Math.max(prevEnd, 0), m.index)
-      prevEnd = m.index + m[0].length
-      const name = before.split(/\n/).map(l => l.trim()).filter(l => l && !l.includes(':') && !/^(ID|Owner|Asset|Transaction|Type|Date|Notification|Amount|Cap\.|Gains|\$200\?|\*)/.test(l))
-        .join(' ').replace(/^(SP|JT|DC)\s+/, '').replace(/\s+/g, ' ').trim() || m[1]
-      const action = m[3].startsWith('P') ? 'BUY' : m[3].startsWith('S') ? 'SELL' : null
-      if (!action) continue
-      const amount = m[6].replace(/\s+/g, ' ')
-      out.push({ source: 'US House Clerk', sourceUrl: url, category: 'politician_us', entity_name: r.name, entity_role: `Representative (${r.district})`,
-        asset_ticker: m[1], asset_name: name, market: 'US', action, trade_size_usd: rangeMid(amount), trade_date: usDate(m[4]), disclosed_at: r.filed,
-        sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${r.name} ${action === 'BUY' ? 'bought' : m[3] === 'S (partial)' ? 'partly sold' : 'sold'} ${name} (${amount})` })
+/** The Clerk's yearly filing index: PTRs filed electronically (document IDs starting with 2). */
+export async function houseIndex(years) {
+  const rows = []
+  for (const year of years) {
+    const zip = unzipSync(await get(`https://disclosures-clerk.house.gov/public_disc/financial-pdfs/${year}FD.zip`, { binary: true }))
+    const txt = strFromU8(zip[`${year}FD.txt`] || Object.values(zip)[0])
+    for (const c of txt.split(/\r?\n/).slice(1).map(l => l.split('\t'))) {
+      if (c[4] !== 'P' || !/^2\d{7}$/.test(c[8] || '')) continue
+      rows.push({ name: `Rep. ${c[2]} ${c[1]}`.replace(/\s+/g, ' ').trim(), last: c[1], first: c[2], district: c[5], filed: usDate(c[7]), doc: c[8], year })
     }
+  }
+  return rows
+}
+
+/** Every transaction in one electronic House PTR. */
+export async function houseParse(r, pdfText) {
+  const url = `https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/${r.year}/${r.doc}.pdf`
+  const text = await pdfText(await get(url, { binary: true }))
+  // Layout: asset name on its own line(s), "(TICK) [ST]", then "P|S|S (partial)|E <trade date>
+  // <notification date> $a - $b", then labelled lines ("Filing status: New", "Subholding of: …") that
+  // belong to that trade. Section headings come out as letters followed by NUL characters.
+  const clean = text.replace(/[A-Za-z]\u0000+/g, m => m[0]).replace(/\u0000/g, '')
+  const re = /\(([A-Z][A-Z.]{0,6})\)\s*\[(ST|EF|OP)\]\s*(P|S \(partial\)|S|E)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+(\$[\d,]+\s*-\s*\$[\d,]+|Over \$[\d,]+)/g
+  const out = []
+  let m, prevEnd = clean.search(/\$200\?/) + 5
+  while ((m = re.exec(clean))) {
+    const before = clean.slice(Math.max(prevEnd, 0), m.index)
+    prevEnd = m.index + m[0].length
+    const name = before.split(/\n/).map(l => l.trim()).filter(l => l && !l.includes(':') && !/^(ID|Owner|Asset|Transaction|Type|Date|Notification|Amount|Cap\.|Gains|\$200\?|\*)/.test(l))
+      .join(' ').replace(/^(SP|JT|DC)\s+/, '').replace(/\s+/g, ' ').trim() || m[1]
+    const action = m[3].startsWith('P') ? 'BUY' : m[3].startsWith('S') ? 'SELL' : null
+    if (!action) continue
+    const amount = m[6].replace(/\s+/g, ' ')
+    out.push({ source: 'US House Clerk', sourceUrl: url, category: 'politician_us', entity_name: r.name, entity_role: `Representative (${r.district})`,
+      asset_ticker: m[1], asset_name: name, market: 'US', action, partial: m[3] === 'S (partial)',
+      trade_size_usd: rangeMid(amount), trade_size_range: rangeLoHi(amount), amount_text: amount, trade_date: usDate(m[4]), disclosed_at: r.filed,
+      sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${r.name} ${action === 'BUY' ? 'bought' : m[3] === 'S (partial)' ? 'partly sold' : 'sold'} ${name} (${amount})` })
+  }
+  return out
+}
+
+export async function housePTRs({ days = 30, max = 12, pdfText } = {}) {
+  const rows = (await houseIndex([new Date().getUTCFullYear()]))
+    .filter(r => r.filed && r.filed > Date.now() - days * DAY).sort((a, b) => b.filed - a.filed).slice(0, max)
+  const out = []
+  for (const r of rows) {
+    try { out.push(...await houseParse(r, pdfText)) } catch { /* skip unreadable filing */ }
     await sleep(250)
   }
   return out

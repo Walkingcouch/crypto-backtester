@@ -8,6 +8,12 @@ interface Sig {
   trade_date: number | null; disclosed_at: number; disclosure_delay_days: number; sentiment_score: number | null
   text: string; sources: { source: string; url?: string }[]; confidence: number; day_weight: number; swing_weight: number
   cluster_size: number; badges: string[]; blocked: string | null; urgent?: boolean; topics?: string[]; tone?: number
+  trade_size_range?: [number, number | null] | null; amount_text?: string; partial?: boolean
+  order?: {
+    currency: string; date: number; dateIsTrade: boolean; price: number | null; now: number | null; since: number | null
+    shares: [number, number | null] | null; buys?: { date: number; price: number; range: [number, number | null] | null }[]
+    buyAvg?: number; gain?: number; gainUsd?: [number, number | null] | null; held?: number; noBuySince?: number
+  }
 }
 interface Feed { signals: Sig[]; status: Record<string, { ok: boolean; n?: number; note?: string }>; runs: Record<string, number>; lastRun: number }
 
@@ -23,6 +29,35 @@ const SOURCE_NAMES: Record<string, string> = { truth: 'Truth Social (Trump)', ok
 const when = (t: number) => new Date(t).toLocaleString('en-AU', { timeZone: 'Australia/Darwin', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 const day = (t: number) => new Date(t).toLocaleDateString('en-AU', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
 const usd = (x: number) => (x >= 1e6 ? `US$${(x / 1e6).toFixed(1)}m` : x >= 1e3 ? `US$${Math.round(x / 1e3)}k` : `US$${x}`)
+const money = (x: number, cur: string) => `${cur === 'AUD' ? 'A$' : 'US$'}${x >= 1000 ? x.toLocaleString('en-AU', { maximumFractionDigits: 0 }) : x.toFixed(2)}`
+const range = (r: [number, number | null]) => (r[1] ? `$${r[0].toLocaleString('en-US')}–$${r[1].toLocaleString('en-US')}` : `over $${r[0].toLocaleString('en-US')}`)
+const k = (x: number) => (Math.abs(x) >= 1e6 ? `$${(x / 1e6).toFixed(1)}m` : Math.abs(x) >= 1e3 ? `$${(x / 1e3).toFixed(1)}k` : `$${Math.round(x)}`)
+const sgn = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`
+
+/** Buy / sell order details for a politician's trade, and for sales the matched buys and result. */
+function OrderBox({ s }: { s: Sig }) {
+  const o = s.order
+  if (!o) return null
+  const verb = s.action === 'BUY' ? 'Bought' : s.partial ? 'Partly sold' : 'Sold'
+  return (
+    <div className="sm-order">
+      <div><b>{verb}</b>{s.trade_size_range ? <> {range(s.trade_size_range)}</> : null} {o.dateIsTrade ? 'on' : 'reported'} {day(o.date)}
+        {o.price != null && <> at about <b>{money(o.price, o.currency)}</b>{o.shares ? <> (≈ {o.shares[0].toLocaleString('en-US')}{o.shares[1] ? `–${o.shares[1].toLocaleString('en-US')}` : '+'} shares)</> : null}</>}
+        {o.now != null && o.since != null && <>. Now {money(o.now, o.currency)}, <b className={o.since >= 0 ? 'pos' : 'neg'}>{sgn(o.since)}</b> since{s.action === 'SELL' ? (o.since > 0 ? ' (they missed this rise)' : ' (they avoided this fall)') : ''}.</>}
+      </div>
+      {s.action === 'SELL' && o.buys?.length ? (
+        <div>
+          <b>Bought earlier:</b> {o.buys.map((b, i) => <span key={i}>{i ? '; ' : ''}{day(b.date)} at ≈ {money(b.price, o.currency)}{b.range ? ` (${range(b.range)})` : ''}</span>)}.{' '}
+          <b>Result:</b> <b className={(o.gain ?? 0) >= 0 ? 'pos' : 'neg'}>{sgn(o.gain ?? 0)}</b> over {o.held} days
+          {o.gainUsd ? <>, an estimated <b className={(o.gain ?? 0) >= 0 ? 'pos' : 'neg'}>{k(o.gainUsd[0])}{o.gainUsd[1] != null ? `–${k(o.gainUsd[1])}` : '+'}</b> {(o.gain ?? 0) >= 0 ? 'profit' : 'loss'} on this sale</> : null}.
+        </div>
+      ) : s.action === 'SELL' && s.market === 'US' ? (
+        <div className="muted">No matching buy found in their filings{o.noBuySince ? ` since ${day(o.noBuySince)}` : ''}: bought before then, or still being checked (past filings are read a few at a time).</div>
+      ) : null}
+    </div>
+  )
+}
+
 const ACTION: Record<string, [string, string]> = { BUY: ['Buy', 'green'], SELL: ['Sell', 'red'], MENTION: ['Mention', 'blue'], ALERT: ['Alert', 'gold'] }
 
 export default function SmartMoney() {
@@ -31,6 +66,7 @@ export default function SmartMoney() {
   const [filter, setFilter] = useState('all')
   const [market, setMarket] = useState<'all' | 'US' | 'ASX' | 'CRYPTO'>('all')
   const [strong, setStrong] = useState(false)
+  const [sort, setSort] = useState<'new' | 'profit'>('new')
 
   useEffect(() => {
     let alive = true
@@ -49,8 +85,10 @@ export default function SmartMoney() {
 
   const rows = useMemo(() => {
     const f = FILTERS.find(x => x.id === filter)!
-    return (feed?.signals ?? []).filter(s => (!f.cats.length || f.cats.includes(s.category)) && (market === 'all' || s.market === market) && (!strong || s.confidence >= 0.5 || s.badges.length > 0))
-  }, [feed, filter, market, strong])
+    const xs = (feed?.signals ?? []).filter(s => (!f.cats.length || f.cats.includes(s.category)) && (market === 'all' || s.market === market) && (!strong || s.confidence >= 0.5 || s.badges.length > 0))
+    if (sort === 'profit') return xs.filter(s => s.order?.gainUsd).sort((a, b) => (b.order!.gainUsd![1] ?? b.order!.gainUsd![0]) - (a.order!.gainUsd![1] ?? a.order!.gainUsd![0]))
+    return xs
+  }, [feed, filter, market, strong, sort])
   const top = useMemo(() => (feed?.signals ?? []).filter(s => s.action === 'BUY' && s.cluster_size > 1).slice(0, 6), [feed])
 
   return (
@@ -64,6 +102,7 @@ export default function SmartMoney() {
         <div className="sm-filters">
           {(['all', 'US', 'ASX', 'CRYPTO'] as const).map(m => <button key={m} className={`chip chip-sm ${market === m ? 'on' : ''}`} onClick={() => setMarket(m)}>{m === 'all' ? 'All markets' : m === 'CRYPTO' ? 'Crypto' : m}</button>)}
           <button className={`chip chip-sm ${strong ? 'on' : ''}`} onClick={() => setStrong(s => !s)}>Strong signals only</button>
+          <button className={`chip chip-sm ${sort === 'profit' ? 'on' : ''}`} onClick={() => setSort(x => (x === 'profit' ? 'new' : 'profit'))}>Politicians' sales by profit</button>
         </div>
         {top.length > 0 && filter === 'all' && <div className="sm-cluster">
           <b>Clusters:</b> {top.map(s => <span key={s.key} className="tag green">{s.asset_ticker} · {s.cluster_size} {s.category.startsWith('politician') ? 'politicians' : 'insiders'} buying</span>)}
@@ -87,6 +126,7 @@ export default function SmartMoney() {
                   {s.urgent && <span className="tag red small">urgent wording</span>}
                 </div>
                 <div className="sm-text">{s.text}</div>
+                {s.category.startsWith('politician') && <OrderBox s={s} />}
                 <div className="muted small sm-meta">
                   <span>{s.entity_name}{s.entity_role ? ` · ${s.entity_role}` : ''}</span>
                   {s.trade_size_usd ? <span>size ≈ {usd(s.trade_size_usd)}</span> : null}
@@ -101,7 +141,7 @@ export default function SmartMoney() {
                 <div className="small sm-src">{s.sources.map((x, i) => x.url ? <a key={i} href={x.url} target="_blank" rel="noreferrer">{x.source}</a> : <span key={i}>{x.source}</span>)}</div>
               </li>)
           })}</ul> : <p className="muted">Nothing matches these filters yet. Sources fill in over the first few hours.</p>}
-          <p className="hint">Research only: none of these is a trade instruction. Politicians' and insiders' trades are disclosed days to weeks after they happen, and studies disagree on whether following politicians beats the market. Company insiders buying together (clusters) has the strongest research support. These signals will be tested against the market index like every other rule once enough history builds up.</p>
+          <p className="hint">Order details are estimates: disclosures give only a dollar range and a date, so price is that day's close (Yahoo Finance), shares are the range divided by that price, and a sale's result compares its price with the average price of the same person's earlier disclosed buys (weighted by size). Research only: none of these is a trade instruction. Politicians' and insiders' trades are disclosed days to weeks after they happen, and studies disagree on whether following politicians beats the market. Company insiders buying together (clusters) has the strongest research support. These signals will be tested against the market index like every other rule once enough history builds up.</p>
           <Disclosure title={<b>Sources and when they last ran</b>}>
             <ul className="lab-events">{Object.entries(SOURCE_NAMES).map(([k, name]) => {
               const st = feed.status?.[k]

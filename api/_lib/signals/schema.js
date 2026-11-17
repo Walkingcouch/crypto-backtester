@@ -107,3 +107,12 @@ export function rangeMid(txt) {
   const over = (txt || '').replace(/,/g, '').match(/over \$?(\d+)/i)
   return over ? +over[1] : null
 }
+
+/** Range text → [low, high] in USD ("Over $1,000,000" → [1000000, null]). */
+export function rangeLoHi(txt) {
+  const t = (txt || '').replace(/,/g, '')
+  const n = t.match(/\$?(\d+(?:\.\d+)?)\s*-\s*\$?(\d+(?:\.\d+)?)/)
+  if (n) return [+n[1], +n[2]]
+  const over = t.match(/over \$?(\d+)/i)
+  return over ? [+over[1], null] : null
+}
