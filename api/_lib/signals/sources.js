@@ -178,9 +178,10 @@ export async function auPoliticians() {
   while ((m = re.exec(text))) {
     const t = Date.parse(m[8]) || Date.now()
     const action = m[6] === 'Bought' ? 'BUY' : 'SELL'
-    out.push({ source: 'PoliticianTrades.au', sourceUrl: 'https://politiciantrades.au/', category: 'politician_au', entity_name: `${m[1]} ${m[2]} (${m[3]})`, entity_role: `${m[2]} · ${m[7]}`,
+    const who = m[1].replace(/^(?:Source|Original filing|Record date)\s+/, '')
+    out.push({ source: 'PoliticianTrades.au', sourceUrl: 'https://politiciantrades.au/', category: 'politician_au', entity_name: `${who} ${m[2]} (${m[3]})`, entity_role: `${m[2]} · ${m[7]}`,
       asset_ticker: m[5], asset_name: m[4].trim(), market: 'ASX', action, trade_size_usd: null, trade_date: null, disclosed_at: t,
-      sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${m[1]} ${m[2]} (${m[3]}) ${action === 'BUY' ? 'bought' : 'sold'} ${m[4].trim()} (ASX:${m[5]}), ${m[7].toLowerCase()} holding` })
+      sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${who} ${m[2]} (${m[3]}) ${action === 'BUY' ? 'bought' : 'sold'} ${m[4].trim()} (ASX:${m[5]}), ${m[7].toLowerCase()} holding` })
   }
   return out
 }

@@ -71,7 +71,9 @@ export default async function handler(req, res) {
   const { list, added } = merge(state.signals, incoming, now)
   const events = await weekCalendar().catch(() => [])
   const ctx = { events, derivatives: Object.fromEntries(Object.entries(state.derivatives || {}).map(([k, v]) => [k, { funding: v.funding }])), breakout: await breakouts(list) }
-  state.signals = score(list.filter(s => now - s.disclosed_at < 90 * DAY), now, ctx).slice(0, 1500)
+  // politicians disclose slowly (Australian MPs can take months), so their trades are kept for a year
+  const keep = s => now - s.disclosed_at < (s.category.startsWith('politician') ? 365 : 90) * DAY
+  state.signals = score(list.filter(keep), now, ctx).slice(0, 1500)
   state.status = { ...state.status, ...status }
   state.lastRun = now
   let saved = null

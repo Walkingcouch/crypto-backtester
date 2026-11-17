@@ -55,6 +55,15 @@ export default function Guide() {
         <p>Stablecoins and leveraged tokens are left out. Coins listed recently show "new" for periods longer than their history.
           A coin topping the list recently says nothing reliable about the next month. The labs show which rules have actually held up.</p>
 
+        <h3>Smart money &amp; political flow</h3>
+        <p>The second tab on <Link to="/markets?view=flow">Markets</Link> gathers, every 30 minutes: share trades disclosed by US senators and representatives (official Senate and House filings) and Australian MPs (PoliticianTrades.au); company insiders' open-market buys and sales (SEC Form 4) and ASX directors' interest notices (Appendix 3Y); market-relevant Truth Social posts by Donald Trump (via the Trump's Truth archive); crypto futures funding and open interest (OKX); and the hawkish or dovish tone of Fed and RBA statements.</p>
+        <ul>
+          <li><b>One row per fact.</b> The same trade from two sources is merged and gains confidence. Several politicians or insiders trading the same share within 10 days is flagged as a cluster, the pattern with the strongest research support (company insiders buying together).</li>
+          <li><b>Freshness matters.</b> Each signal has a day-trade weight that fades within hours or days and is cut hard when the disclosure came late (US politicians can file 45 days after trading), and a swing weight that fades slowly.</li>
+          <li><b>Do-not-buy.</b> Buys are flagged "do not buy yet" ahead of a high-impact release or central-bank decision for that market, and crypto buys when futures longs are crowded.</li>
+          <li><b>Research only.</b> Nothing here places orders. These signals will be tested against the market index like every other rule once enough history builds up.</li>
+        </ul>
+
         <h2 id="predict">Predictions</h2>
         <p>Pick a coin from the quick buttons or the full coin list (the same ranking, filters, price range and where-to-buy badges as Markets). The <Link to="/predict">Predict</Link> page then estimates where a coin's price could be in <b>7 days, 14 days, 1 month or 3 months</b> (pick from the dropdown). It never claims to know the direction. It tells you how wide the realistic range is, and shows its own track record so you can judge how far to trust it.</p>
         <ul>
