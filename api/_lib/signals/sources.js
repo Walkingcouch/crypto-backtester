@@ -85,15 +85,24 @@ export async function housePTRs({ days = 30, max = 12, pdfText } = {}) {
     const url = `https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/${year}/${r.doc}.pdf`
     let text
     try { text = await pdfText(await get(url, { binary: true })) } catch { continue }
-    // each transaction: "Asset Name (TICK) [ST] P 10/02/2026 10/15/2026 $1,001 - $15,000"
-    const re = /([A-Z][^()\n]{2,80}?)\s*\(([A-Z.]{1,6})\)\s*\[(ST|EF|OP)\]\s*(P|S|S \(partial\)|E)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+(\$[\d,]+\s*-\s*\$[\d,]+|Over \$[\d,]+)/g
-    let m
-    while ((m = re.exec(text.replace(/\s+/g, ' ')))) {
-      const action = m[4].startsWith('P') ? 'BUY' : m[4].startsWith('S') ? 'SELL' : null
+    // Layout (electronic PTRs): asset name on its own line(s), "(TICK) [ST]", then "P|S|S (partial)|E
+    // <trade date> <notification date> $a - $b", then labelled lines ("Filing status: New",
+    // "Subholding of: Charles Schwab …") that belong to that trade. Section headings come out as
+    // letters followed by NUL characters, which are removed first.
+    const clean = text.replace(/[A-Za-z]\u0000+/g, m => m[0]).replace(/\u0000/g, '')
+    const re = /\(([A-Z][A-Z.]{0,6})\)\s*\[(ST|EF|OP)\]\s*(P|S \(partial\)|S|E)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}\/\d{2}\/\d{4})\s+(\$[\d,]+\s*-\s*\$[\d,]+|Over \$[\d,]+)/g
+    let m, prevEnd = clean.search(/\$200\?/) + 5
+    while ((m = re.exec(clean))) {
+      const before = clean.slice(Math.max(prevEnd, 0), m.index)
+      prevEnd = m.index + m[0].length
+      const name = before.split(/\n/).map(l => l.trim()).filter(l => l && !l.includes(':') && !/^(ID|Owner|Asset|Transaction|Type|Date|Notification|Amount|Cap\.|Gains|\$200\?|\*)/.test(l))
+        .join(' ').replace(/^(SP|JT|DC)\s+/, '').replace(/\s+/g, ' ').trim() || m[1]
+      const action = m[3].startsWith('P') ? 'BUY' : m[3].startsWith('S') ? 'SELL' : null
       if (!action) continue
+      const amount = m[6].replace(/\s+/g, ' ')
       out.push({ source: 'US House Clerk', sourceUrl: url, category: 'politician_us', entity_name: r.name, entity_role: `Representative (${r.district})`,
-        asset_ticker: m[2], asset_name: m[1].trim(), market: 'US', action, trade_size_usd: rangeMid(m[7]), trade_date: usDate(m[5]), disclosed_at: r.filed,
-        sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${r.name} ${action === 'BUY' ? 'bought' : 'sold'} ${m[1].trim()} (${m[7]})` })
+        asset_ticker: m[1], asset_name: name, market: 'US', action, trade_size_usd: rangeMid(amount), trade_date: usDate(m[4]), disclosed_at: r.filed,
+        sentiment_score: action === 'BUY' ? 1 : -1, conflict_score: null, text: `${r.name} ${action === 'BUY' ? 'bought' : m[3] === 'S (partial)' ? 'partly sold' : 'sold'} ${name} (${amount})` })
     }
     await sleep(250)
   }
