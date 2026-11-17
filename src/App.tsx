@@ -5,7 +5,7 @@ import History from './pages/History'
 import Markets from './pages/Markets'
 import Predict from './pages/Predict'
 import Picks from './pages/Picks'
-import { LabDay, LabExplore, LabSwing } from './pages/Lab'
+import { LabDay, LabExplore, LabStocks, LabSwing } from './pages/Lab'
 import Account from './pages/Account'
 import { useAuth } from './lib/auth'
 import { cloudEnabled } from './lib/supabase'
@@ -55,6 +55,7 @@ export default function App() {
         <Route path="/lab" element={<LabSwing />} />
         <Route path="/lab/explore" element={<LabExplore />} />
         <Route path="/lab/daytrade" element={<LabDay />} />
+        <Route path="/lab/stocks" element={<LabStocks />} />
         <Route path="/runs" element={<Navigate to="/history" replace />} />
         <Route path="/ledger" element={<Navigate to="/history?tab=checks" replace />} />
         <Route path="/account" element={<Account />} />

@@ -9,6 +9,7 @@ export interface Found { id: string; text: string; H: number; pass: boolean; tra
 export interface Position { base: string; v: number; units: number; entryPx: number; fillPx: number; costUsd: number; t: number; stop: number; exitT: number; spread: number; est: number; cost: number; estimated?: boolean }
 export interface Closed extends Position { exitPx: number; net: number; gross: number; why: 'stop' | 'time' }
 export interface Account {
+  market?: string; perShareUsd?: number; minFeeUsd?: number; minFeeAud?: number; maxFeePct?: number
   id: string; owner: string; broker: string; exchange: string; fee: number; feeLabel: string; startAud: number
   startUsd: number; cashAud: number; valueUsd?: number; valueAud?: number
   positions: Position[]; closed: Closed[]; stats: { n: number; wins: number; sumNet: number }
@@ -30,3 +31,4 @@ export const LAB: {
 export const ACCOUNTS: { id: string; owner: string; broker: string; exchange: string; fee: number; feeLabel: string; startAud: number }[]
 export function estimate(all: Stats): number
 export function describe(r: RuleSpec): string
+export function feeFrac(a: Account, valueUsd: number, px: number, rate: number): number

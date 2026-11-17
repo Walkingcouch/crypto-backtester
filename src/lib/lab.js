@@ -157,15 +157,29 @@ export function discover(data, S = LAB) {
 export const estimate = all => all.mean - all.se
 
 // ---------------------------------------------------------------- the live loop
-export function newState(audPerUsd, now) {
+export function newState(audPerUsd, now, accounts = ACCOUNTS) {
   return {
     version: 1, created: now, lastRun: null, lastSignalDay: 0, lastCoach: 0, nextV: 1,
     rules: [], shadow: [], events: [], history: [],
-    accounts: Object.fromEntries(ACCOUNTS.map(a => [a.id, freshAccount(a, audPerUsd)])),
+    accounts: Object.fromEntries(accounts.map(a => [a.id, freshAccount(a, audPerUsd)])),
   }
 }
 
 const push = (arr, x, max) => { arr.push(x); if (arr.length > max) arr.splice(0, arr.length - max) }
+
+/**
+ * The broker's fee on one order, as a fraction of its value. Crypto accounts charge a flat %;
+ * share brokers also charge per share and have a minimum per order (which bites on small trades).
+ * valueUsd = order value in USD, px = price per share in USD, rate = AUD per USD.
+ */
+export function feeFrac(a, valueUsd, px, rate) {
+  if (!(valueUsd > 0)) return a.fee
+  let fee = a.fee * valueUsd
+  if (a.perShareUsd && px > 0) fee = Math.max(fee, a.perShareUsd * valueUsd / px)
+  fee = Math.max(fee, (a.minFeeUsd || 0) + (a.minFeeAud || 0) / rate)
+  if (a.maxFeePct) fee = Math.min(fee, a.maxFeePct * valueUsd)
+  return fee / valueUsd
+}
 const pct = x => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}%`
 
 function liveMean(rule, since = 0) {
@@ -245,13 +259,14 @@ export function step(state, market, now, S = LAB, opts = {}) {
   // an account that has never traded can only ever have been worth its start (clears the old FX blip)
   for (const acct of Object.values(state.accounts)) if (!acct.stats.n && !acct.positions.length) for (const h of state.history) if (h[acct.id] != null) h[acct.id] = acct.startAud
   // accounts are named by exchange; add any new exchange, and keep fee/labels in step with ACCOUNTS
-  for (const cfg of ACCOUNTS) {
+  const ACCTS = S.accounts || ACCOUNTS
+  for (const cfg of ACCTS) {
     const acct = state.accounts[cfg.id]
     if (!acct) { state.accounts[cfg.id] = freshAccount(cfg, rate); push(state.events, { t: now, kind: 'note', text: `${cfg.exchange} account added, starting with A$${cfg.startAud.toLocaleString()}.` }, 300); continue }
-    Object.assign(acct, { owner: cfg.owner, exchange: cfg.exchange, broker: cfg.broker, fee: cfg.fee, feeLabel: cfg.feeLabel })
+    Object.assign(acct, cfg, { startAud: acct.startAud })
   }
   // if a starting amount was changed in ACCOUNTS, scale that account (cash, positions, history) to match
-  for (const cfg of ACCOUNTS) {
+  for (const cfg of ACCTS) {
     const acct = state.accounts[cfg.id]
     if (!acct || acct.startAud === cfg.startAud) continue
     const k = cfg.startAud / acct.startAud
@@ -275,7 +290,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
       const p = price(pos.base); if (!(p > 0)) continue
       const stopped = p <= pos.stop
       if (!stopped && now < pos.exitT) continue
-      const proceeds = pos.units * p * (1 - pos.spread / 2 - S.slippage) * (1 - a.fee)
+      const proceeds = pos.units * p * (1 - pos.spread / 2 - S.slippage) * (1 - feeFrac(a, pos.units * p, p, rate))
       const net = proceeds / pos.costUsd - 1
       a.cashAud += proceeds * rate
       a.positions.splice(a.positions.indexOf(pos), 1)
@@ -294,26 +309,38 @@ export function step(state, market, now, S = LAB, opts = {}) {
     state.lastCoach = now
   }
 
-  // 3. entries, once per new daily close
-  const lastDay = Math.max(...market.coins.map(c => c.t[c.t.length - 1]))
-  if (lastDay > state.lastSignalDay) {
-    state.lastSignalDay = lastDay
-    const champ = state.rules.find(r => r.status === 'champion')
+  // 3. entries, once per new daily close. Markets with different closing times (US and ASX shares)
+  //    each keep their own clock, so one market's close doesn't swallow the other's.
+  const groups = new Map()
+  for (const c of market.coins) { const g = c.market || '', t = c.t[c.t.length - 1]; if (!(groups.get(g) >= t)) groups.set(g, t) }
+  state.lastSignalDays ||= {}
+  const champ = state.rules.find(r => r.status === 'champion')
+  const barDays = S.daysPerBar || 1          // calendar days per bar (shares skip weekends)
+  for (const [g, lastDay] of groups) {
+    const prev = g ? (state.lastSignalDays[g] || 0) : state.lastSignalDay
+    if (!(lastDay > prev)) continue
+    if (g) state.lastSignalDays[g] = lastDay; else state.lastSignalDay = lastDay
     for (const r of state.rules.filter(x => x.status !== 'retired')) {
       for (const coin of market.coins) {
+        if ((coin.market || '') !== g) continue
         const i = coin.c.length - 1
         if (coin.t[i] !== lastDay) continue
         const F = coin.F || (coin.F = features(coin))
         if (!signal(r.spec, coin, F, i, data)) continue
         const p = price(coin.base); if (!(p > 0)) continue
         const sp = stopPct(F.dvol[i], r.spec.H, r.spec.stopM)
+        const exitT = now + r.spec.H * DAY * barDays
         if (!state.shadow.some(s => s.v === r.v && s.base === coin.base))
-          state.shadow.push({ v: r.v, base: coin.base, entry: p, t: now, stop: p * (1 - sp), exitT: now + r.spec.H * DAY })
+          state.shadow.push({ v: r.v, base: coin.base, entry: p, t: now, stop: p * (1 - sp), exitT })
         if (r !== champ) continue
-        for (const a of Object.values(state.accounts)) enter(a, r, coin.base, p, sp, market, now, S, log)
+        for (const a of Object.values(state.accounts)) {
+          if (a.market && a.market !== (coin.market || '')) continue
+          enter(a, r, coin.base, p, sp, market, now, S, log, exitT)
+        }
       }
     }
   }
+  if (groups.size > 1 || !groups.has('')) state.lastSignalDay = Math.max(state.lastSignalDay || 0, ...Object.values(state.lastSignalDays))
 
   // 4. valuation
   const value = a => a.cashAud + rate * a.positions.reduce((s, pos) => s + pos.units * (price(pos.base) || pos.entryPx), 0)   // AUD
@@ -327,28 +354,30 @@ export function step(state, market, now, S = LAB, opts = {}) {
   return state
 }
 
-function enter(a, r, base, p, sp, market, now, S, log) {
+function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * DAY) {
   const note = why => { push(a.lastBlocked, { t: now, base, v: r.v, why }, 30) }
   if (a.positions.some(x => x.base === base)) return
   const spread = market.quotes?.[a.id]?.[base]
   if (!(spread >= 0)) { a.blocked.quote++; note(`no live ${a.exchange} quote for ${base}`); return }
   const estimated = !!market.estimated?.[a.id]?.[base]
-  const cost = 2 * a.fee + spread + 2 * S.slippage
+  const rate = market.audPerUsd
+  const cashUsd = a.cashAud / rate
+  const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
+  const invested = equity - cashUsd
+  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested)
+  if (a.positions.length >= S.maxOpen || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
+  const fee = feeFrac(a, alloc, p, rate)     // on this order's size (minimum fees bite on small orders)
+  const cost = 2 * fee + spread + 2 * S.slippage
   const est = estimate(r.all)
   if (!(est > cost + S.margin)) {
     a.blocked.cost++
     note(`estimated gain ${pct(est)} doesn't cover costs ${pct(cost)} + margin ${pct(S.margin)}`)
     return
   }
-  const cashUsd = a.cashAud / market.audPerUsd
-  const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
-  const invested = equity - cashUsd
-  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested)
-  if (a.positions.length >= S.maxOpen || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fill = p * (1 + spread / 2 + S.slippage)
-  const units = alloc * (1 - a.fee) / fill
-  a.cashAud -= alloc * market.audPerUsd
-  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT: now + r.spec.H * DAY, spread, est, cost, estimated })
+  const units = alloc * (1 - fee) / fill
+  a.cashAud -= alloc * rate
+  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT, spread, est, cost, estimated })
   log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; estimate ${pct(est)} vs cost ${pct(cost)}${estimated ? `, spread estimated at ${pct(spread)} because ${base} isn't in ${a.exchange}'s public price feed` : ''}).`)
 }
 

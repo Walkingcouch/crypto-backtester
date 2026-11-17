@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { Disclosure, Info } from '../components/Info'
 import { fmtMoney, useCurrency } from '../lib/currency'
-import { estimate, LAB, type LabRule, type LabState } from '../lib/lab'
+import { estimate, feeFrac, LAB, type LabRule, type LabState } from '../lib/lab'
 import { EXPLORE, hurdle } from '../lib/explorer'
 import { DT } from '../lib/daytrade'
+import { STOCK, US, ASX } from '../lib/stocks'
 import { supabase } from '../lib/supabase'
 import { fmtPrice } from '../lib/markets'
 
@@ -14,7 +15,7 @@ const when = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'sh
 const day = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
 const cls = (x: number) => (x > 0 ? 'pos' : x < 0 ? 'neg' : '')
 const KIND: Record<string, string> = { promote: 'Promoted', rollback: 'Rolled back', challenger: 'New challenger', retire: 'Retired', trade: 'Trade', note: 'Note' }
-const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8', binance: '#d99a1e' }
+const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8', binance: '#d99a1e', ibus: '#3b6fd8', ibasx: '#d99a1e' }
 
 function liveRecord(r: LabRule) {
   const g = (r.live?.trades ?? []).map(t => t.g)
@@ -47,7 +48,7 @@ function BalanceChart({ state }: { state: LabState }) {
 
 type Settings = typeof LAB
 interface Variant {
-  key: 'swing' | 'explore' | 'day'; sid: string; api: string; S: Settings
+  key: 'swing' | 'explore' | 'day' | 'stocks'; sid: string; api: string; S: Settings
   title: string; intro: ReactNode; howto: [string, string][]
   unit: string; every: string; noRule: string; tested: ReactNode; stops: ReactNode
 }
@@ -62,6 +63,21 @@ const STOPS_SWING = (S: Settings, H?: number) => (<ul>
 </ul>)
 
 const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Settings, H?: number) => ReactNode }> = {
+  stocks: {
+    key: 'stocks', sid: 'stocks', api: '/api/stocks-cron?dry=1', S: STOCK as unknown as Settings, title: 'Lab · US & ASX shares', unit: 'trading days', every: 'after each market closes (4:00pm Darwin for the ASX, 8:00am Darwin for the US)',
+    intro: <>The same swing-trading loop as the crypto Lab, on {US.length} large US shares and index funds and {ASX.length} large ASX shares and ETFs. It picks from the same 39 rules, trades the best on paper, and swaps rules only when one proves itself. Fees are Interactive Brokers' real prices, the broker picked for running a bot from Australia.</>,
+    howto: [['Two A$10,000 accounts', "One trades US shares, one trades ASX shares, both at Interactive Brokers. Bigger than the crypto accounts because each order has a minimum fee (A$5.50 on the ASX), which eats small trades."],
+      ['Only trades worth the cost', 'The same cost gate: it buys only when the expected gain beats the brokerage, price gap and slippage on that order size, with room to spare.'],
+      ['Once a day, after the close', "Signals use each market's finished daily bar. Every position has a stop-loss and a time limit."]],
+    noRule: 'Each week the bot re-tests its 39 rules on about 5 years of daily prices. None passed both checks this time, so it waits in cash.',
+    tested: <>Each rule was tried on every past signal across these shares over about 5 years. To pass, it must make money after {pct(STOCK.refCost)} costs a trade on the older data (at least {STOCK.minTrain} trades, and clearly more than luck) <i>and</i> on the last {STOCK.validDays} days. The list is today's big companies, which flatters past results a little.</>,
+    stops: (S: Settings, H?: number) => (<ul>
+      <li><b>Distance:</b> about 2.5 times the share's typical move over the holding period, never closer than 5% or further than 25% below the buy price.</li>
+      <li><b>Checked once a day</b> at the close. A share that gaps down overnight can sell below its stop.</li>
+      <li><b>Time limit:</b> sold when the rule's holding period ends ({H ? `${H} trading days for the current rule` : 'set by the rule'}), win or lose.</li>
+      <li><b>Size by the stop:</b> each position loses at most about {pct0(S.riskPerTrade)} of the account at its stop. No more than {pct0(S.maxPosition)} in one share, {S.maxOpen} at once, at least {pct0(1 - S.maxInvested)} in cash.</li>
+    </ul>),
+  },
   swing: {
     key: 'swing', sid: 'main', api: '/api/lab-cron?dry=1', S: LAB, title: 'Lab · swing rules', unit: 'days', every: 'every 2 hours',
     intro: <>A paper-trading bot that picks from a fixed menu of 39 swing-trading rules (held 3–20 days), trades the best one with pretend money, and swaps in a better rule only when one proves itself.</>,
@@ -101,6 +117,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
 }
 
 export function LabSwing() { return <LabView v={VARIANTS.swing} /> }
+export function LabStocks() { return <LabView v={VARIANTS.stocks} /> }
 export function LabExplore() { return <LabView v={VARIANTS.explore} /> }
 export function LabDay() { return <LabView v={VARIANTS.day} /> }
 export default LabSwing
@@ -108,9 +125,12 @@ export default LabSwing
 function LabTabs() {
   return (
     <div className="lab-tabs">
+      <span className="lab-tabs-group">Crypto</span>
       <NavLink to="/lab" end>Swing rules</NavLink>
       <NavLink to="/lab/explore">New ideas</NavLink>
       <NavLink to="/lab/daytrade">Day trading</NavLink>
+      <span className="lab-tabs-group">Shares</span>
+      <NavLink to="/lab/stocks">US &amp; ASX</NavLink>
     </div>
   )
 }
@@ -150,6 +170,8 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
   const changes = useMemo(() => (state?.events ?? []).filter(e => e.kind !== 'trade').slice(-3).reverse(), [state])
   const trades = useMemo(() => (state?.events ?? []).filter(e => e.kind === 'trade').slice(-12).reverse(), [state])
   const accts = state ? Object.values(state.accounts) : []
+  const shares = v.key === 'stocks'
+  const noun = shares ? 'share' : 'coin'
 
   return (
     <main className="page narrow">
@@ -182,7 +204,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
                     <div className="label"><span className="dot" style={{ background: COLORS[a.id] }} /> {a.exchange}</div>
                     <div className="value">{money(v)}</div>
                     <div className={`sub ${cls(v / a.startAud - 1)}`}>{pct(v / a.startAud - 1)} since start ({money(a.startAud)})</div>
-                    <div className="sub">{a.positions.length ? `${a.positions.length} coin${a.positions.length === 1 ? '' : 's'} held` : 'All in cash'} · {a.stats.n} finished trade{a.stats.n === 1 ? '' : 's'}{a.stats.n ? `, ${pct0(a.stats.wins / a.stats.n)} won` : ''}</div>
+                    <div className="sub">{a.positions.length ? `${a.positions.length} ${noun}${a.positions.length === 1 ? '' : 's'} held` : 'All in cash'} · {a.stats.n} finished trade{a.stats.n === 1 ? '' : 's'}{a.stats.n ? `, ${pct0(a.stats.wins / a.stats.n)} won` : ''}</div>
                   </div>
                 )
               })}
@@ -197,13 +219,13 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
               <div key={a.id} style={{ marginBottom: 14 }}>
                 <h3>{a.exchange} <span className="muted small">· cash {money(a.cashAud)}</span></h3>
                 {a.positions.length ? <div className="table-wrap"><table className="record">
-                  <thead><tr><th>Coin</th><th>Price: bought → now</th><th>Value: put in → now <Info>Now = what you'd get selling right now, after the exchange fee and price gap.</Info></th><th>Stop-loss <Info>If the price falls to this level, the bot sells. Set when bought and never moved.</Info></th><th>Sells by <Info>If the stop-loss hasn't been hit, the coin is sold at this time whatever the price.</Info></th></tr></thead>
+                  <thead><tr><th>{shares ? 'Share' : 'Coin'}</th><th>Price: bought → now</th><th>Value: put in → now <Info>Now = what you'd get selling right now, after the exchange fee and price gap.</Info></th><th>Stop-loss <Info>If the price falls to this level, the bot sells. Set when bought and never moved.</Info></th><th>Sells by <Info>If the stop-loss hasn't been hit, the coin is sold at this time whatever the price.</Info></th></tr></thead>
                   <tbody>{a.positions.map(p => {
                     const now = state.prices?.[p.base]
                     const worth = now ? p.units * now * (1 - p.spread / 2 - S.slippage) * (1 - a.fee) : NaN
                     const room = now ? p.stop / now - 1 : NaN
                     return (
-                    <tr key={p.base}><td><Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link><div className="muted small">{day(p.t)}</div></td>
+                    <tr key={p.base}><td>{shares ? <b>{p.base.replace('.AX', '')}</b> : <Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link>}<div className="muted small">{day(p.t)}</div></td>
                       <td>{px(p.entryPx)} → {now ? px(now) : '–'}<div className={`small ${now ? cls(now / p.entryPx - 1) : ''}`}>{now ? pct(now / p.entryPx - 1) : ''}</div></td>
                       <td>{moneyUsd(p.costUsd)} → {now ? moneyUsd(worth) : '–'}<div className={`small ${now ? cls(worth / p.costUsd - 1) : ''}`}>{now ? pct(worth / p.costUsd - 1) : ''}</div></td>
                       <td><span className="neg">{px(p.stop)}</span><div className="muted small">{pct(p.stop / p.entryPx - 1, 0)}{Number.isFinite(room) ? ` · ${Math.round(Math.abs(room) * 100)}% away` : ''}</div></td>
@@ -212,7 +234,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
                   : <p className="muted small">Nothing held: waiting for the next signal that clears the cost gate.</p>}
                 {a.closed.length > 0 && <Disclosure title={`Finished trades (${a.stats.n})`}>
                   <div className="table-wrap"><table className="record">
-                    <thead><tr><th>Coin</th><th>Result after costs</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
+                    <thead><tr><th>{shares ? 'Share' : 'Coin'}</th><th>Result after costs</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
                     <tbody>{a.closed.slice().reverse().map((c, i) => (
                       <tr key={i}><td><b>{c.base}</b></td><td className={cls(c.net)}>{pct(c.net)}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss hit' : 'Time limit'}</td><td>{when(c.exitT)}</td></tr>
                     ))}</tbody></table></div>
@@ -256,7 +278,8 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             <p className="muted small" style={{ marginTop: 0 }}>Mark's rule: only buy when the expected gain beats the full cost of buying and selling, plus a {pct(S.margin)} safety margin.</p>
             <div className="gate-grid">
               {accts.map(a => {
-                const base = 2 * a.fee + 2 * S.slippage
+                const orderUsd = S.maxPosition * (a.valueAud ?? a.startAud) / rate   // a full-size order
+                const base = 2 * feeFrac(a, orderUsd, 150, rate) + 2 * S.slippage
                 const est = champ ? estimate(champ.all) : NaN
                 const ok = champ && est > base + S.margin
                 return (
@@ -270,7 +293,9 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
                 )
               })}
             </div>
-            <p className="hint">Expected gain = the average of every past signal of this rule, losers included, minus a margin for luck. Price gap = the difference between the exchange's buy and sell prices, read live (CoinSpot coins missing from its public feed are assumed to have a 1% gap).</p>
+            <p className="hint">Expected gain = the average of every past signal of this rule, losers included, minus a margin for luck. {shares
+              ? <>Costs are for a full-size order (about {pct0(S.maxPosition)} of the account) at Interactive Brokers: {accts.map(a => `${a.feeLabel} (${a.market})`).join('; ')}. Price gap is assumed: about 0.03% for US large caps and 0.1% for the ASX names (no free live order book).</>
+              : <>Price gap = the difference between the exchange's buy and sell prices, read live (CoinSpot coins missing from its public feed are assumed to have a 1% gap).</>}</p>
             {accts.some(a => a.lastBlocked.length) && <Disclosure title="Recently skipped signals">
               <ul className="lab-events">{accts.flatMap(a => a.lastBlocked.slice(-5).reverse().map((b, i) => <li key={a.id + i}><b>{a.exchange}</b> skipped {b.base}: {b.why} <span className="muted small">{when(b.t)}</span></li>))}</ul>
             </Disclosure>}
@@ -296,7 +321,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             </section>
           )}
 
-          <p className="hint">Fills are simulated at Binance's price plus each exchange's live price gap, fee and slippage, so real fills will differ a little. A few weeks of paper results is still mostly luck: judge it over months.</p>
+          <p className="hint">{shares ? "Fills are simulated at each market's closing price plus the price gap, Interactive Brokers' fee and slippage. Prices come from Yahoo Finance's daily data, adjusted for splits and dividends. US results are shown in Australian dollars at today's rate (currency conversion fees aren't counted)." : "Fills are simulated at Binance's price plus each exchange's live price gap, fee and slippage, so real fills will differ a little."} A few weeks of paper results is still mostly luck: judge it over months.</p>
         </>
       )}
     </main>
