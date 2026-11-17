@@ -457,3 +457,10 @@ table.record td:first-child { white-space: nowrap; }
 .refresh-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface, transparent); color: var(--muted); cursor: pointer; }
 .refresh-btn:active { transform: rotate(-30deg); }
 .refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
+/* phones: the menu gets its own full-width row under the logo and buttons */
+@media (max-width: 640px) {
+  .topbar-inner { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 6px; row-gap: 4px; gap: 10px; }
+  .topbar-inner .nav { order: 5; flex-basis: 100%; margin: 0 -6px; }
+  .topbar-inner .refresh-btn { margin-left: auto; }
+  .nav a { padding: 6px 9px; font-size: 15px; }
+}
