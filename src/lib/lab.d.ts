@@ -2,7 +2,7 @@ export interface Stats { n: number; mean: number; se: number; t: number; win: nu
 export interface RuleSpec { kind: string; n?: number; k?: number; regime: string; H: number }
 export interface LabRule {
   v: number; id: string; spec: RuleSpec; text: string; status: 'champion' | 'challenger' | 'retired'
-  since: number; reason?: string; wasChampion?: boolean; train: Stats; valid: Stats; all: Stats; pass: boolean
+  since: number; reason?: string; wasChampion?: boolean; practice?: boolean; train: Stats; valid: Stats; all: Stats; pass: boolean
   live?: { trades: { t: number; base: string; g: number }[] }
 }
 export interface Found { id: string; text: string; H: number; pass: boolean; train: Stats; valid: Stats; all: Stats }

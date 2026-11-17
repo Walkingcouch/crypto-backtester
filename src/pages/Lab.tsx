@@ -171,7 +171,8 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
           <section className="card">
             <div className="step-head">
               <span className="step-badge">Summary{state.lastRun ? ` · updated ${when(state.lastRun)}` : ''}</span>
-              <h2>{champ ? 'How the paper accounts are doing' : 'No rule has earned a place yet: all accounts are in cash'}</h2>
+              <h2>{champ ? (champ.practice ? 'Practice trading: no rule has passed the checks yet' : 'How the paper accounts are doing') : 'No rule has earned a place yet: all accounts are in cash'}</h2>
+              {champ?.practice && <p className="hint">So the lab still builds a record, it paper-trades the best few rules anyway, with every fee and price gap charged. Each hour it looks at what the rules signalled in the hour just finished and takes those trades at that hour's price. Expect these accounts to lose money if the rules can't beat costs: that's the point of the test.</p>}
             </div>
             <div className="kpis" style={{ gridTemplateColumns: `repeat(${accts.length}, minmax(0, 1fr))` }}>
               {accts.map(a => {
@@ -235,7 +236,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
           <section className="card">
             <h2>The rule it's using</h2>
             {champ ? (
-              <RuleCard r={champ} title={`Current rule · v${champ.v}`} />
+              <RuleCard r={champ} title={`${champ.practice ? 'Practice rule' : 'Current rule'} · v${champ.v}`} />
             ) : <p className="muted">{v.noRule}</p>}
             {changes.length > 0 && (<>
               <h3>Latest rule changes</h3>
@@ -243,7 +244,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             </>)}
             {challengers.length > 0 && <Disclosure title={`Backup rules being tested on paper (${challengers.length})`}>
               <p className="muted small">These trade "in the shadow" with no money. One replaces the current rule only if its own live results beat it by at least {pct(S.promoteBy)} a trade over {S.promoteAfter}+ trades. The previous rule stays here, so a worse replacement gets rolled back automatically.</p>
-              {challengers.map(r => <RuleCard key={r.v} r={r} title={`v${r.v}${r.wasChampion ? ' · previous rule' : ''}`} small />)}
+              {challengers.map(r => <RuleCard key={r.v} r={r} title={`v${r.v}${r.practice ? ' · practice' : ''}${r.wasChampion ? ' · previous rule' : ''}`} small />)}
             </Disclosure>}
             {retired.length > 0 && <Disclosure title={`Retired rules (${retired.length})`}>
               <ul className="lab-events">{retired.map(r => <li key={r.v}><b>v{r.v}</b> {r.text} <span className="muted small">— {r.reason}</span></li>)}</ul>

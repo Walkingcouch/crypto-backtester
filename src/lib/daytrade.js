@@ -34,6 +34,10 @@ export const DT = {
   promoteBy: 0.001,
   coachEveryDays: 1,
   wfTrainDays: 120, wfTestDays: 30,
+  // Practice mode: while no rule passes the checks, paper-trade the best few anyway (full costs
+  // charged, clearly labelled) so the lab builds a live record instead of sitting in cash.
+  practiceRules: 3,
+  catchUpHours: 24,       // signals from completed hours not yet acted on are taken at that hour's price
 }
 
 export function allDayRules() {
@@ -199,23 +203,55 @@ export function walkForward(found, data, S = DT) {
 const push = (arr, x, max) => { arr.push(x); if (arr.length > max) arr.splice(0, arr.length - max) }
 const pct = x => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(2)}%`
 const utcDate = t => new Date(t).toISOString().slice(0, 10)
+const hhmm = t => new Date(t).toISOString().slice(11, 16)
 
-/** Walk a position's bars since entry: stop first (honouring gaps), then its planned close. */
-function checkExit(pos, coin, now) {
+/**
+ * Walk a position's completed bars since entry, up to time `upTo`: stop first (honouring gaps),
+ * then the early exit, then its planned close. Returns the exit price, reason and time.
+ */
+function checkExit(pos, coin, upTo, now) {
   if (coin) {
     for (let j = 0; j < coin.t.length; j++) {
       const bs = coin.t[j], be = bs + HOUR
-      if (bs < pos.t) continue                   // only bars that started after we bought
-      if (coin.l[j] <= pos.stop) return { px: Math.min(coin.o[j], pos.stop), why: 'stop' }
-      if (pos.kind === 'mr' && coin.c[j] >= pos.sma24) return { px: coin.c[j], why: 'target' }
-      if (be >= pos.exitT) return { px: coin.c[j], why: 'time' }
+      if (bs < pos.t) continue                   // only bars from the hour we bought onwards
+      if (be > upTo) break
+      if (coin.l[j] <= pos.stop) return { px: Math.min(coin.o[j], pos.stop), why: 'stop', t: be }
+      if (pos.kind === 'mr' && coin.c[j] >= pos.sma24) return { px: coin.c[j], why: 'target', t: be }
+      if (be >= pos.exitT) return { px: coin.c[j], why: 'time', t: be }
     }
   }
-  return now >= pos.exitT ? { px: null, why: 'time' } : null
+  return upTo >= now && now >= pos.exitT ? { px: null, why: 'time', t: now } : null
+}
+
+/**
+ * Practice mode: no rule passes, so trade the best few on older data anyway (re-chosen daily).
+ * As soon as any rule passes, practice rules are retired and the normal coach takes over.
+ */
+function practiceCoach(state, found, now, S, log) {
+  const byId = new Map(found.map(f => [f.id, f]))
+  for (const r of state.rules) { const f = byId.get(r.id); if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass } }
+  const want = found.filter(f => f.train.n >= S.minTrain).sort((a, b) => b.train.t - a.train.t).slice(0, S.practiceRules)
+  const prevChamp = state.rules.find(r => r.status === 'champion')
+  for (const r of state.rules) {
+    if (r.status === 'retired' || !r.practice) continue
+    if (!want.some(f => f.id === r.id)) { r.status = 'retired'; r.reason = 'no longer among the best few'; log('retire', `v${r.v} (practice) retired: ${r.reason}.`) }
+  }
+  want.forEach((f, k) => {
+    let r = state.rules.find(x => x.id === f.id && x.status !== 'retired')
+    if (!r) {
+      r = { v: state.nextV++, id: f.id, spec: f.spec, text: f.text, status: 'challenger', practice: true, since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] } }
+      state.rules.push(r)
+    }
+    r.practice = true
+    r.status = k === 0 ? 'champion' : 'challenger'
+    r.reason = k === 0 ? 'practice: best on older data, but hasn\'t passed the checks after costs' : 'practice: followed in the shadow'
+  })
+  const champ = state.rules.find(r => r.status === 'champion')
+  if (champ && champ !== prevChamp) log('promote', `Practice mode: no rule has passed the checks, so v${champ.v} is traded on paper anyway (full costs charged): ${champ.text}`)
 }
 
 export function stepDay(state, market, now, S = DT) {
-  const log = (kind, text) => push(state.events, { t: now, kind, text }, 400)
+  const log = (kind, text, t = now) => push(state.events, { t, kind, text }, 400)
   const rate = market.audPerUsd
   const price = b => market.live[b]
   const coinOf = b => market.coins.find(c => c.base === b) || market.held?.[b]
@@ -223,74 +259,92 @@ export function stepDay(state, market, now, S = DT) {
   const data = { coins: market.coins }
   state.unit = 'hours'
 
-  // 1. exits — protective stops and the end-of-day close always run
-  for (const s of state.shadow.slice()) {
-    const x = checkExit(s, coinOf(s.base), now)
-    if (!x) continue
-    const px = x.px ?? price(s.base)
-    if (!(px > 0)) continue
-    const r = ruleByV.get(s.v)
-    if (r) push((r.live ||= { trades: [] }).trades, { t: now, base: s.base, g: px / s.entry - 1 }, 400)
-    state.shadow.splice(state.shadow.indexOf(s), 1)
-  }
-  for (const a of Object.values(state.accounts)) {
-    for (const pos of a.positions.slice()) {
-      const x = checkExit(pos, coinOf(pos.base), now)
+  // closes everything whose bars up to `upTo` say it's done (stop, early exit, end of hold)
+  const exits = upTo => {
+    for (const s of state.shadow.slice()) {
+      const x = checkExit(s, coinOf(s.base), upTo, now)
       if (!x) continue
-      const px = x.px ?? price(pos.base)
+      const px = x.px ?? price(s.base)
       if (!(px > 0)) continue
-      const proceeds = pos.units * px * (1 - pos.spread / 2 - S.slippage) * (1 - a.fee)
-      const net = proceeds / pos.costUsd - 1
-      a.cashAud += proceeds * rate
-      a.positions.splice(a.positions.indexOf(pos), 1)
-      a.stats.n++; a.stats.sumNet += net; if (net > 0) a.stats.wins++
-      push(a.closed, { ...pos, exitT: now, exitPx: px, net, gross: px / pos.entryPx - 1, why: x.why === 'target' ? 'time' : x.why }, 300)
-      log('trade', `${a.owner}: sold ${pos.base} (${x.why === 'stop' ? 'stop-loss' : x.why === 'target' ? 'back to average' : 'end of hold'}) ${pct(net)} after costs.`)
+      const r = ruleByV.get(s.v)
+      if (r) push((r.live ||= { trades: [] }).trades, { t: x.t, base: s.base, g: px / s.entry - 1 }, 400)
+      state.shadow.splice(state.shadow.indexOf(s), 1)
+    }
+    for (const a of Object.values(state.accounts)) {
+      for (const pos of a.positions.slice()) {
+        const x = checkExit(pos, coinOf(pos.base), upTo, now)
+        if (!x) continue
+        const px = x.px ?? price(pos.base)
+        if (!(px > 0)) continue
+        const proceeds = pos.units * px * (1 - pos.spread / 2 - S.slippage) * (1 - a.fee)
+        const net = proceeds / pos.costUsd - 1
+        a.cashAud += proceeds * rate
+        a.positions.splice(a.positions.indexOf(pos), 1)
+        a.stats.n++; a.stats.sumNet += net; if (net > 0) a.stats.wins++
+        push(a.closed, { ...pos, exitT: x.t, exitPx: px, net, gross: px / pos.entryPx - 1, why: x.why === 'target' ? 'time' : x.why }, 300)
+        log('trade', `${a.owner}: sold ${pos.base} (${x.why === 'stop' ? 'stop-loss' : x.why === 'target' ? 'back to average' : 'end of hold'})${x.t < now - 30 * 60_000 ? ` at ${hhmm(x.t)} UTC` : ''} ${pct(net)} after costs.`, x.t)
+      }
     }
   }
 
-  // 2. daily re-test + walk-forward
-  if (now - state.lastCoach >= S.coachEveryDays * DAY - HOUR && market.coins.length) {
+  // 1. daily re-test + walk-forward; practice mode while nothing passes
+  const noChamp = !state.rules.some(r => r.status === 'champion')
+  if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp)) && market.coins.length) {
     const found = discoverDay(data, S)
     state.walk = walkForward(found, data, S)
-    coach(state, found, now, S)
+    if (found.some(f => f.pass)) {
+      for (const r of state.rules) if (r.practice && r.status !== 'retired') { r.status = 'retired'; r.reason = 'a rule passed the checks, so practice ended' }
+      coach(state, found, now, S)
+    } else if (S.practiceRules) practiceCoach(state, found, now, S, log)
+    else coach(state, found, now, S)
     state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
+    ruleByV.clear(); for (const r of state.rules) ruleByV.set(r.v, r)
   }
 
-  // 3. daily loss limit bookkeeping
+  // 2. daily loss limit bookkeeping
   const value = a => a.cashAud + rate * a.positions.reduce((s, p) => s + p.units * (price(p.base) || p.entryPx), 0)
   const today = utcDate(now)
   if (state.day?.date !== today) state.day = { date: today, start: Object.fromEntries(Object.values(state.accounts).map(a => [a.id, value(a)])) }
 
-  // 4. entries on the newest completed bar
+  // 3. every completed hour not yet acted on, oldest first: close what finished, then take that
+  //    hour's signals at the price they had (the next hour's open), as if we'd been watching live.
   const lastBar = Math.max(...market.coins.map(c => c.t[c.t.length - 1]))
-  if (lastBar > (state.lastSignalDay || 0)) {
-    state.lastSignalDay = lastBar
-    const champ = state.rules.find(r => r.status === 'champion')
+  const floor = lastBar - S.catchUpHours * HOUR
+  const from = state.caughtUp ? Math.max(state.lastSignalDay || 0, floor) : Math.max(Math.floor(now / DAY) * DAY - 2 * HOUR, floor)
+  const hours = [...new Set(market.coins.flatMap(c => c.t.slice(-S.catchUpHours - 1).filter(t => t > from && t <= lastBar)))].sort((a, b) => a - b)
+  const champ = state.rules.find(r => r.status === 'champion')
+  for (const T of hours) {
+    const entryT = T + HOUR
+    exits(entryT)
     for (const r of state.rules.filter(x => x.status !== 'retired')) {
       for (const coin of market.coins) {
-        const i = coin.c.length - 1
-        if (coin.t[i] !== lastBar) continue
+        const i = coin.t.indexOf(T)
+        if (i < 0) continue
         const D = dayFeatures(coin)
         if (!daySignal(r.spec, coin, D, i)) continue
-        const p = price(coin.base); if (!(p > 0)) continue
-        const entryHour = new Date(lastBar + HOUR).getUTCHours()
-        const hold = holdHours(r.spec, entryHour)
+        const p = i + 1 < coin.c.length ? coin.o[i + 1] : price(coin.base)
+        if (!(p > 0)) continue
+        const hold = holdHours(r.spec, new Date(entryT).getUTCHours())
         const sp = dayStopPct(D.hvol[i], hold)
-        const exitT = Math.min(Math.floor(now / DAY) * DAY + DAY, lastBar + HOUR * (1 + hold))
-        const base = { base: coin.base, t: now, stop: p * (1 - sp), exitT, kind: r.spec.kind, sma24: D.sma24[i] }
-        if (!state.shadow.some(s => s.v === r.v && s.base === coin.base)) state.shadow.push({ ...base, v: r.v, entry: p })
+        const exitT = Math.min(Math.floor(entryT / DAY) * DAY + DAY, entryT + HOUR * hold)
+        if (exitT <= entryT) continue
+        const pos0 = { base: coin.base, t: entryT, stop: p * (1 - sp), exitT, kind: r.spec.kind, sma24: D.sma24[i] }
+        if (!state.shadow.some(s => s.v === r.v && s.base === coin.base)) state.shadow.push({ ...pos0, v: r.v, entry: p })
         if (r !== champ) continue
         for (const a of Object.values(state.accounts)) {
           const dd = value(a) / (state.day.start[a.id] || a.startAud) - 1
-          if (dd <= -S.dailyLossLimit) { a.blocked.limits++; push(a.lastBlocked, { t: now, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
-          enterDay(a, r, coin.base, p, sp, base, market, now, S, log)
+          if (dd <= -S.dailyLossLimit) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
+          enterDay(a, r, coin.base, p, sp, pos0, market, now, S, log)
         }
       }
     }
   }
+  if (lastBar > (state.lastSignalDay || 0)) state.lastSignalDay = lastBar
+  state.caughtUp = true
+  exits(now)
+  state.events.sort((a, b) => a.t - b.t)
 
   // 5. valuation
   push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 1000)
@@ -309,7 +363,7 @@ function enterDay(a, r, base, p, sp, pos0, market, now, S, log) {
   if (!(spread >= 0)) { a.blocked.quote++; note(`no live ${a.exchange} quote for ${base}`); return }
   const cost = 2 * a.fee + spread + 2 * S.slippage
   const est = estimate(r.all)
-  if (!(est > cost + S.margin)) { a.blocked.cost++; note(`expected gain ${pct(est)} doesn't cover costs ${pct(cost)} + margin ${pct(S.margin)}`); return }
+  if (!r.practice && !(est > cost + S.margin)) { a.blocked.cost++; note(`expected gain ${pct(est)} doesn't cover costs ${pct(cost)} + margin ${pct(S.margin)}`); return }
   const cashUsd = a.cashAud / market.audPerUsd
   const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
   const invested = equity - cashUsd
@@ -319,5 +373,6 @@ function enterDay(a, r, base, p, sp, pos0, market, now, S, log) {
   const units = alloc * (1 - a.fee) / fill
   a.cashAud -= alloc * market.audPerUsd
   a.positions.push({ ...pos0, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, spread, est, cost, estimated: !!market.estimated?.[a.id]?.[base] })
-  log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; expected ${pct(est)} vs cost ${pct(cost)}).`)
+  const at = pos0.t < now - 30 * 60_000 ? ` at ${hhmm(pos0.t)} UTC` : ''
+  log('trade', `${a.owner}: bought ${base}${at} with ${(alloc / equity * 100).toFixed(0)}% of the account (${r.practice ? 'practice, ' : ''}rule v${r.v}; expected ${pct(est)} vs cost ${pct(cost)}).`, pos0.t)
 }
