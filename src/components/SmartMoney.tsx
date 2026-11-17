@@ -12,7 +12,7 @@ interface Sig {
   order?: {
     currency: string; date: number; dateIsTrade: boolean; price: number | null; now: number | null; since: number | null
     shares: [number, number | null] | null; buys?: { date: number; price: number; range: [number, number | null] | null }[]
-    buyAvg?: number; gain?: number; gainUsd?: [number, number | null] | null; held?: number; noBuySince?: number
+    buyAvg?: number; gain?: number; gainUsd?: [number, number | null] | null; held?: number; noBuySince?: number; checking?: boolean
   }
 }
 interface Feed { signals: Sig[]; status: Record<string, { ok: boolean; n?: number; note?: string }>; runs: Record<string, number>; lastRun: number }
@@ -49,10 +49,11 @@ function OrderBox({ s }: { s: Sig }) {
         <div>
           <b>Bought earlier:</b> {o.buys.map((b, i) => <span key={i}>{i ? '; ' : ''}{day(b.date)} at ≈ {money(b.price, o.currency)}{b.range ? ` (${range(b.range)})` : ''}</span>)}.{' '}
           <b>Result:</b> <b className={(o.gain ?? 0) >= 0 ? 'pos' : 'neg'}>{sgn(o.gain ?? 0)}</b> over {o.held} days
-          {o.gainUsd ? <>, an estimated <b className={(o.gain ?? 0) >= 0 ? 'pos' : 'neg'}>{k(o.gainUsd[0])}{o.gainUsd[1] != null ? `–${k(o.gainUsd[1])}` : '+'}</b> {(o.gain ?? 0) >= 0 ? 'profit' : 'loss'} on this sale</> : null}.
+          {o.gainUsd ? (() => { const a = Math.abs(o.gainUsd[0]), b = o.gainUsd[1] != null ? Math.abs(o.gainUsd[1]) : null; const lo = b != null ? Math.min(a, b) : a, hi = b != null ? Math.max(a, b) : null
+            return <>, an estimated <b className={(o.gain ?? 0) >= 0 ? 'pos' : 'neg'}>{k(lo)}{hi != null ? `–${k(hi)}` : '+'}</b> {(o.gain ?? 0) >= 0 ? 'profit' : 'loss'} on this sale</> })() : null}.
         </div>
       ) : s.action === 'SELL' && s.market === 'US' ? (
-        <div className="muted">No matching buy found in their filings{o.noBuySince ? ` since ${day(o.noBuySince)}` : ''}: bought before then, or still being checked (past filings are read a few at a time).</div>
+        <div className="muted">{o.checking ? 'Profit: still reading their earlier filings to find when they bought (a few filings every 30 minutes).' : `Profit: no buy in their filings since ${o.noBuySince ? day(o.noBuySince) : 'our records start'}, so they bought before then.`}</div>
       ) : null}
     </div>
   )

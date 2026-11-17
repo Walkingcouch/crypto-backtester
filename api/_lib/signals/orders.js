@@ -37,7 +37,7 @@ function closeOn(h, d) {
  * ledger = { trades: [...], houseDocs: [...], senateLinks: [...], senateNames: [...] }
  */
 export async function backfillLedger(ledger, signals, { pdfText, maxHouse = 10, maxSenate = 3 } = {}) {
-  ledger.trades ||= []; ledger.houseDocs ||= []; ledger.senateLinks ||= []; ledger.senateDone ||= []
+  ledger.trades ||= []; ledger.houseDocs ||= []; ledger.senateLinks ||= []; ledger.senateDone ||= []; ledger.houseDone ||= []
   const have = new Set(ledger.trades.map(ledgerKey))
   const add = ts => { for (const t of ts) { const k = ledgerKey(t); if (!have.has(k)) { have.add(k); ledger.trades.push(slim(t)) } } }
   add(signals.filter(s => s.category === 'politician_us' && s.trade_date))
@@ -55,6 +55,8 @@ export async function backfillLedger(ledger, signals, { pdfText, maxHouse = 10, 
       ledger.houseDocs.push(r.doc)
       await sleep(200)
     }
+    // anyone with no unread filings left has been fully checked back to January last year
+    for (const n of houseNames) if (!idx.slice(maxHouse).some(r => norm(r.name) === n) && !ledger.houseDone.includes(n)) ledger.houseDone.push(n)
   }
   // Senate: the person's filings over the last two years
   const senators = people.filter(s => s.entity_name.startsWith('Sen.') && !ledger.senateDone.includes(norm(s.entity_name))).slice(0, maxSenate)
@@ -89,7 +91,8 @@ export async function enrichOrders(signals, ledger, { maxTickers = 160 } = {}) {
   const buysBy = new Map()
   for (const t of ledger.trades || []) if (t.action === 'BUY') { const k = `${norm(t.entity_name)}|${t.asset_ticker}`; buysBy.set(k, [...(buysBy.get(k) || []), t]) }
   for (const v of buysBy.values()) v.sort((a, b) => a.trade_date - b.trade_date)
-  const ledgerStart = Math.min(...(ledger.trades || []).map(t => t.trade_date), Date.now())
+  const y = new Date().getUTCFullYear()
+  const houseFrom = Date.UTC(y - 1, 0, 1), senateFrom = Date.now() - 730 * DAY
 
   for (const s of pol) {
     const h = hist[`${s.market}|${s.asset_ticker}`]
@@ -117,7 +120,13 @@ export async function enrichOrders(signals, ledger, { maxTickers = 160 } = {}) {
           o.gainUsd = rng ? [Math.round(rng[0] * g / (1 + g)), rng[1] ? Math.round(rng[1] * g / (1 + g)) : null] : null
           o.held = Math.round((day - priced[0].date) / DAY)
         }
-      } else o.noBuySince = ledgerStart
+      }
+      if (!o.buys) {
+        const n = norm(s.entity_name)
+        const done = s.entity_name.startsWith('Rep.') ? ledger.houseDone?.includes(n) : ledger.senateDone?.includes(n)
+        if (done) o.noBuySince = s.entity_name.startsWith('Rep.') ? houseFrom : senateFrom
+        else o.checking = true
+      }
     }
     s.order = o
   }
