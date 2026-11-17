@@ -6,6 +6,7 @@ import Predict from './pages/Predict'
 import Picks from './pages/Picks'
 import { LabDay, LabExplore, LabSwing, SharesDay, SharesExplore, SharesSwing } from './pages/Lab'
 import Account from './pages/Account'
+import EconCalendar from './pages/EconCalendar'
 import { useAuth } from './lib/auth'
 import { cloudEnabled } from './lib/supabase'
 import { useCurrency, type Cur } from './lib/currency'
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/shares" element={<SharesSwing />} />
         <Route path="/shares/explore" element={<SharesExplore />} />
         <Route path="/shares/daytrade" element={<SharesDay />} />
+        <Route path="/shares/calendar" element={<EconCalendar />} />
         <Route path="/lab/stocks" element={<Navigate to="/shares" replace />} />
         <Route path="/runs" element={<Navigate to="/history" replace />} />
         <Route path="/ledger" element={<Navigate to="/history?tab=checks" replace />} />

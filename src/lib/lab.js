@@ -250,7 +250,7 @@ export function events(r, data) {
         if (j === i + r.H) { exit = coin.c[j]; break }
       }
       if (!Number.isFinite(exit)) break       // still open at the end of the data
-      const ev = { base: coin.base, t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1 }
+      const ev = { base: coin.base, m: coin.market || '', t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1 }
       // shares: what the market index did over exactly the same days (buy its open, sell its close)
       const B = data.bench?.[coin.market || '']
       if (B && B !== coin) {
@@ -288,12 +288,14 @@ export function discover(data, S = LAB) {
     const ev = events(r, data)
     const all = stats(ev)                       // gross, used by the cost gate
     // with a benchmark, the test is the return ABOVE the index over the same days, after costs
-    const judged = S.benchmarks ? ev.filter(e => Number.isFinite(e.ex)).map(e => ({ ...e, g: e.ex })) : ev
-    const train = stats(judged.filter(e => e.exitT < cut), S.refCost)
-    const valid = stats(judged.filter(e => e.t >= cut), S.refCost)
+    // (each market pays its own round-trip cost when S.refCostBy is set)
+    const judged = S.benchmarks ? ev.filter(e => Number.isFinite(e.ex)).map(e => ({ ...e, g: e.ex - (S.refCostBy?.[e.m] ?? S.refCost) })) : ev
+    const cost = S.benchmarks ? 0 : S.refCost
+    const train = stats(judged.filter(e => e.exitT < cut), cost)
+    const valid = stats(judged.filter(e => e.t >= cut), cost)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
     const out = { ...r, text: describe(r), train, valid, all, pass }
-    if (S.benchmarks) out.vsIndex = stats(judged)   // average beat of the index, before costs
+    if (S.benchmarks) out.vsIndex = stats(ev.filter(e => Number.isFinite(e.ex)).map(e => ({ g: e.ex })))   // average beat of the index, before costs
     return out
   }).sort((a, b) => (b.pass - a.pass) || b.train.t - a.train.t)
 }

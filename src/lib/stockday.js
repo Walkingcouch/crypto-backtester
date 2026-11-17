@@ -47,6 +47,7 @@ export const SDT = {
   coachEveryDays: 1,
   wfTrainDays: 120, wfTestDays: 30,
   practiceRules: 3,       // trade the best few on paper while nothing passes (full costs charged)
+  newsGuard: HOUR,        // no new trades within an hour of a high-impact release for that market (CPI, jobs, Fed, RBA…)
   catchUpHours: 30,
 }
 
@@ -354,8 +355,11 @@ export function stepStockDay(state, market, now, S = SDT) {
       const pos0 = { base: coin.base, t: entryT, stop: p * (1 - sp), exitT, holdBars, kind: r.spec.kind }
       if (!state.shadow.some(s => s.v === r.v && s.base === coin.base)) state.shadow.push({ ...pos0, v: r.v, entry: p })
       if (r !== champ) continue
+      // professional desks stand aside around market-moving releases: spreads widen and prices jump
+      const news = S.newsGuard ? (market.events || []).find(e => e.market === coin.market && e.impact === 'High' && Math.abs(e.t - entryT) <= S.newsGuard) : null
       for (const a of Object.values(state.accounts)) {
         if (a.market !== coin.market) continue
+        if (news) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `high-impact news nearby: ${news.title} at ${hhmm(news.t)} Darwin` }, 30); continue }
         const dd = value(a) / (state.day.start[a.id] || a.startAud) - 1
         if (dd <= -S.dailyLossLimit) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
         enter(a, r, coin.base, p, sp, pos0, market, now, S, log)
@@ -373,6 +377,15 @@ export function stepStockDay(state, market, now, S = SDT) {
   state.audPerUsd = rate
   state.prices = {}
   for (const a of Object.values(state.accounts)) for (const pos of a.positions) if (price(pos.base) > 0) state.prices[pos.base] = price(pos.base)
+  // keep a running log of US and Australian releases, so event days can be tested later
+  if (market.events?.length) {
+    const log = (state.newsLog ||= [])
+    const key = e => `${e.t}|${e.title}`
+    const have = new Set(log.map(key))
+    for (const e of market.events) if (!have.has(key(e))) log.push({ t: e.t, market: e.market, title: e.title, impact: e.impact, forecast: e.forecast, previous: e.previous })
+    log.sort((a, b) => a.t - b.t)
+    if (log.length > 3000) log.splice(0, log.length - 3000)
+  }
   state.lastRun = now
   return state
 }

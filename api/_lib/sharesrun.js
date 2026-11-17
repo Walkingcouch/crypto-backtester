@@ -4,6 +4,7 @@
 import { newState, summary } from '../../src/lib/lab.js'
 import { audPerUsd } from './labrun.js'
 import { rpc, sb } from './forecaster.js'
+import { weekCalendar } from './econ.js'
 
 const DAY = 86_400_000, HOUR = 3_600_000
 
@@ -96,6 +97,7 @@ export function sharesHandler(opts) {
       const sessions = {}
       for (const c of usable) if (c.session && !sessions[c.market]) sessions[c.market] = c.session
       const market = { coins: usable, held: {}, live, audPerUsd: rate, quotes, estimated: {}, sessions, full: want.full ?? true }
+      if (opts.events) market.events = await weekCalendar().catch(() => [])
       const state = opts.stepFn(saved ? structuredClone(saved) : newState(rate, now, opts.accounts), market, now)
       if (want.full !== false) state.coinsScanned = usable.map(c => c.base)
       let out = null

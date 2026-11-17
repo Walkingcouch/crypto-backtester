@@ -44,6 +44,7 @@ export const STOCK = {
   daysPerBar: 1.4,        // 5 trading days a week: a 10-day hold is about 14 calendar days
   ruleSet: shareRuleSet,   // 19 rules built for shares (see lab.js); crypto-only rules left out
   benchmarks: { US: 'SPY', ASX: 'STW.AX' },   // every rule is judged on beating the index over the same days
+  refCostBy: { US: 0.002, ASX: 0.005 },   // realistic round trips: US large caps vs ASX (min fee, wider spread)
   minTrainT: 3,           // higher bar because many rules are tried (Harvey, Liu & Zhu 2016)
   minTrain: 60, minValid: 15,
 }

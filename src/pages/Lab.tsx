@@ -73,7 +73,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
       ['Only trades worth the cost', 'The same cost gate: it buys only when the expected gain beats the brokerage, price gap and slippage on that order size, with room to spare.'],
       ['Once a day, after the close', "Signals use each market's finished daily bar. Every position has a stop-loss and a time limit."]],
     noRule: "Each week the bot re-tests its 19 rules. None beat the index clearly enough on both older and recent data, so it waits in cash. That's common: beating the index after costs is hard, which is why most professionals' benchmark is the index fund itself.",
-    tested: <>Each rule was tried on every past signal over about 5 years and judged on its return <b>above the market index</b> over the same days, after {pct(STOCK.refCost)} costs a trade. To pass: at least {STOCK.minTrain} trades and a t-score of {STOCK.minTrainT}+ on the older data (the higher bar professionals use when testing many ideas), <i>and</i> still ahead of the index on the last {STOCK.validDays} days. The share lists are today's index members, which flatters past results a little (survivorship bias).</>,
+    tested: <>Each rule was tried on every past signal over about 5 years and judged on its return <b>above the market index</b> over the same days, after realistic costs (about 0.2% a round trip for US shares, 0.5% for ASX shares). To pass: at least {STOCK.minTrain} trades and a t-score of {STOCK.minTrainT}+ on the older data (the higher bar professionals use when testing many ideas), <i>and</i> still ahead of the index on the last {STOCK.validDays} days. The share lists are today's index members, which flatters past results a little (survivorship bias).</>,
     stops: (S: Settings, H?: number) => (<ul>
       <li><b>Distance:</b> about 2.5 times the share's typical move over the holding period, never closer than 5% or further than 25% below the buy price.</li>
       <li><b>Checked once a day</b> at the close. A share that gaps down overnight can sell below its stop.</li>
@@ -170,13 +170,14 @@ function words(st: LabState, family: Family): LabState {
   return st
 }
 
-function LabTabs({ family }: { family: Family }) {
+export function LabTabs({ family }: { family: Family }) {
   const base = family === 'crypto' ? '/lab' : '/shares'
   return (
     <div className="lab-tabs">
       <NavLink to={base} end>Swing rules</NavLink>
       <NavLink to={`${base}/explore`}>New ideas</NavLink>
       <NavLink to={`${base}/daytrade`}>Day trading</NavLink>
+      {family === 'shares' && <NavLink to="/shares/calendar">Economic calendar</NavLink>}
     </div>
   )
 }

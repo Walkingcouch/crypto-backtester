@@ -6,7 +6,7 @@ import { SPREAD } from '../src/lib/stocks.js'
 import { sharesHandler } from './_lib/sharesrun.js'
 
 export default sharesHandler({
-  sid: 'stocks-day', list: [...US_DAY.map(s => [s, 'US']), ...ASX_DAY.map(s => [s, 'ASX'])], accounts: SDT.accounts, spread: SPREAD, minBars: 200,
+  sid: 'stocks-day', list: [...US_DAY.map(s => [s, 'US']), ...ASX_DAY.map(s => [s, 'ASX'])], accounts: SDT.accounts, spread: SPREAD, minBars: 200, events: true,
   bars: (saved, now) => {
     const full = !saved || !saved.rules?.some(r => r.status === 'champion') || now - (saved.lastCoach || 0) >= SDT.coachEveryDays * DAY - 2 * HOUR
     return { range: full ? '730d' : '3mo', interval: '1h', full }
