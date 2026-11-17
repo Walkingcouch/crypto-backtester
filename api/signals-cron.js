@@ -3,7 +3,7 @@
 // lab_state 'signals'. Vercel cron runs it every 30 minutes; without the cron key (or with ?dry=1)
 // nothing is saved.
 import { extractText, getDocumentProxy } from 'unpdf'
-import { merge, score } from './_lib/signals/schema.js'
+import { merge, rangeLoHi, score } from './_lib/signals/schema.js'
 import { asx3Y, auPoliticians, centralBanks, cryptoDerivatives, housePTRs, secForm4, senatePTRs, truthSocial } from './_lib/signals/sources.js'
 import { weekCalendar } from './_lib/econ.js'
 import { backfillLedger, enrichOrders } from './_lib/signals/orders.js'
@@ -77,6 +77,11 @@ export default async function handler(req, res) {
   state.signals = score(list.filter(keep), now, ctx).slice(0, 1500)
   // order details for politicians' trades: prices on trade dates, implied shares, sale results
   state.ledger ||= {}
+  for (const s of state.signals) if (s.category === 'politician_us' && !s.trade_size_range) {    // rows saved before ranges were kept
+    const amt = (s.text.match(/\((\$[\d,]+\s*-\s*\$[\d,]+|Over \$[\d,]+)\)\s*$/) || [])[1]
+    if (amt) { s.trade_size_range = rangeLoHi(amt); s.amount_text = amt }
+    if (/ partly sold /.test(s.text)) s.partial = true
+  }
   try {
     await enrichOrders(state.signals, state.ledger)                    // prices + matches from what's known
     const got = await backfillLedger(state.ledger, state.signals, { pdfText })   // read more past filings for unmatched sales
