@@ -4,6 +4,7 @@ import CompareChart, { type CompareLine } from '../components/CompareChart'
 import CoinTable, { cls, MarketNotes, pctTxt } from '../components/CoinTable'
 import { Info } from '../components/Info'
 import WhereToBuy from '../components/WhereToBuy'
+import SmartMoney from '../components/SmartMoney'
 import { PERIODS, pricePath, type Period } from '../lib/markets'
 import { rateAtSmooth } from '../lib/currency'
 import { useCoinMarket } from '../lib/useCoinMarket'
@@ -52,10 +53,26 @@ export default function Markets() {
   const periodLabel = PERIODS.find(p => p.id === period)!.label
   const up = all.filter(c => c.trend === 'up').length, down = all.filter(c => c.trend === 'down').length
 
+  const view = params.get('view') === 'flow' ? 'flow' : 'coins'
+  const setView = (v: string) => { const p = new URLSearchParams(params); if (v === 'flow') p.set('view', 'flow'); else p.delete('view'); setParams(p, { replace: true }) }
+  const tabs = (
+    <div className="lab-tabs">
+      <button className={view === 'coins' ? 'active' : ''} onClick={() => setView('coins')}>Coins</button>
+      <button className={view === 'flow' ? 'active' : ''} onClick={() => setView('flow')}>Smart money &amp; political flow</button>
+    </div>
+  )
+  if (view === 'flow') return (
+    <main className="page narrow">
+      <div className="page-head"><h1>Markets</h1>{tabs}</div>
+      <SmartMoney />
+    </main>
+  )
+
   return (
     <main className="page">
       <div className="page-head">
         <h1>Markets</h1>
+        {tabs}
         <p>Every actively traded coin on Binance (USDT pairs), ranked by performance. Tick coins to compare them on one chart.</p>
         <MarketNotes M={M} />
       </div>

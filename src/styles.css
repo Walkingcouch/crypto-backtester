@@ -452,6 +452,8 @@ table.record td:first-child { white-space: nowrap; }
 .lab-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .lab-tabs a { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--border); color: var(--muted); font-weight: 600; font-size: 14px; text-decoration: none; }
 .lab-family { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.lab-tabs button { padding: 7px 14px; border-radius: 999px; border: 1.5px solid var(--border); color: var(--muted); font-weight: 600; font-size: 14px; background: transparent; cursor: pointer; font-family: inherit; }
+.lab-tabs button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .lab-tabs a.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 .refresh-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface, transparent); color: var(--muted); cursor: pointer; }
@@ -477,3 +479,20 @@ table.record td:first-child { white-space: nowrap; }
 .tag.blue { background: rgba(59,111,216,.12); color: #3b6fd8; }
 .tag.gold { background: rgba(217,154,30,.14); color: #b07a10; }
 @media (max-width: 560px) { .econ-item { grid-template-columns: 1fr; gap: 4px; } .econ-when { flex-direction: row; gap: 8px; align-items: center; } }
+
+/* smart money feed */
+.sm-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.sm-cluster { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
+.sm-list { list-style: none; margin: 0; padding: 0; }
+.sm-item { padding: 12px 0; border-top: 1px solid var(--border); }
+.sm-item:first-child { border-top: 0; }
+.sm-item.blocked { opacity: .85; }
+.sm-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sm-ticker { font-size: 16px; }
+.sm-text { margin: 6px 0 4px; }
+.sm-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.sm-scores { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-top: 6px; font-size: 14px; }
+.sm-bar { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: var(--surface-2); margin-left: 6px; vertical-align: middle; overflow: hidden; }
+.sm-bar i { display: block; height: 100%; background: var(--accent); }
+.sm-src { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.tag.small { font-size: 11px; }

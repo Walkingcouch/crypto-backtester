@@ -182,7 +182,7 @@ const TOPICS = [
   [/bitcoin|crypto|BTC|stablecoin|digital asset/i, 'crypto', 'BTC', 'CRYPTO'],
   [/\bfed\b|federal reserve|interest rate|rate cut|powell|warsh/i, 'the Fed and rates', 'MARKET', 'US'],
   [/oil|drill|energy|gas price|OPEC/i, 'energy', 'XLE', 'US'],
-  [/defen[cs]e|military|missile|pentagon|war\b/i, 'defence', 'ITA', 'US'],
+  [/\bdefen[cs]e (?:spending|contract|budget)|\bmilitary\b|\bmissiles?\b|\bpentagon\b|\bwar\b/i, 'defence', 'ITA', 'US'],
   [/china|beijing|xi jinping/i, 'China', 'MARKET', 'US'],
   [/australia|albanese/i, 'Australia', 'MARKET', 'ASX'],
 ]

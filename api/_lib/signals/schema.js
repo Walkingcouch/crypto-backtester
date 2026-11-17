@@ -80,7 +80,7 @@ export function score(list, now, ctx = {}) {
     const badges = []
     if (s.sources.length > 1) badges.push(`${s.sources.length} sources`)
     if (cluster.length) badges.push(`${cluster.length + 1} ${s.category.startsWith('politician') ? 'politicians' : 'insiders'} ${s.action === 'BUY' ? 'buying' : 'selling'}`)
-    if (s.action === 'BUY' && ctx.breakout?.[`${s.market}|${s.asset_ticker}`]) badges.push('+ technical breakout')
+    if (s.action === 'BUY' && !s.category.startsWith('politician') && ctx.breakout?.[`${s.market}|${s.asset_ticker}`]) badges.push('+ technical breakout')
     if (s.category === 'social' && s.reach >= 500_000) badges.push('high-reach catalyst')
     if (s.category.startsWith('politician') && s.action === 'BUY' && ctx.breakout?.[`${s.market}|${s.asset_ticker}`]) badges.push('politician buy + breakout')
     s.badges = badges
