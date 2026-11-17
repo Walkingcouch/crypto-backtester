@@ -241,8 +241,8 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
           <section className="card">
             <div className="step-head">
               <span className="step-badge">Summary{state.lastRun ? ` · updated ${when(state.lastRun)}` : ''}</span>
-              <h2>{champ ? (champ.practice ? 'Practice trading: no rule has passed the checks yet' : 'How the paper accounts are doing') : 'No rule has earned a place yet: all accounts are in cash'}</h2>
-              {champ?.practice && <p className="hint">So the lab still builds a record, it paper-trades the best few rules anyway, with every fee and price gap charged. Each hour it looks at what the rules signalled in the hour just finished and takes those trades at that hour's price. Expect these accounts to lose money if the rules can't beat costs: that's the point of the test.</p>}
+              <h2>{champ ? (champ.practice ? 'Learning mode: trying several ideas on paper, dropping losers fast' : 'How the paper accounts are doing') : 'No rule has earned a place yet: all accounts are in cash'}</h2>
+              {champ?.practice && <p className="hint">No rule has passed the strict checks yet, so instead of waiting the lab learns by doing. Several different ideas trade the paper accounts at once, with every fee and price gap charged; one slot always goes to an untried idea. Each idea gets a fair run of at least {state.learning?.minHoldDays ?? 14} days, and losing trades along the way are expected. Each live trade is compared with what's normal for that rule on that same coin or share; an idea is benched only when, after {state.learning?.failAfter ?? 20}+ trades, it's doing so much worse than its own normal that bad luck can't explain it. Losses here are the cost of finding out what works.{state.learning ? ` Now: ${state.learning.active} ideas trading, ${state.learning.eligible} active enough to try, ${state.learning.benched} benched.` : ''}</p>}
             </div>
             <div className="kpis" style={{ gridTemplateColumns: `repeat(${accts.length}, minmax(0, 1fr))` }}>
               {accts.map(a => {
@@ -273,7 +273,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
                     const worth = now ? p.units * now * (1 - p.spread / 2 - S.slippage) * (1 - a.fee) : NaN
                     const room = now ? p.stop / now - 1 : NaN
                     return (
-                    <tr key={p.base}><td>{shares ? <b>{p.base.replace('.AX', '')}</b> : <Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link>}<div className="muted small">{day(p.t)}</div></td>
+                    <tr key={`${p.base}-${p.v}`}><td>{shares ? <b>{p.base.replace('.AX', '')}</b> : <Link to={`/predict?coin=${p.base}USDT`}><b>{p.base}</b></Link>}<div className="muted small">{day(p.t)}{p.v ? ` · rule v${p.v}` : ''}</div></td>
                       <td>{px(p.entryPx)} → {now ? px(now) : '–'}<div className={`small ${now ? cls(now / p.entryPx - 1) : ''}`}>{now ? pct(now / p.entryPx - 1) : ''}</div></td>
                       <td>{moneyUsd(p.costUsd)} → {now ? moneyUsd(worth) : '–'}<div className={`small ${now ? cls(worth / p.costUsd - 1) : ''}`}>{now ? pct(worth / p.costUsd - 1) : ''}</div></td>
                       <td><span className="neg">{px(p.stop)}</span><div className="muted small">{pct(p.stop / p.entryPx - 1, 0)}{Number.isFinite(room) ? ` · ${Math.round(Math.abs(room) * 100)}% away` : ''}</div></td>
@@ -306,15 +306,15 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
           <section className="card">
             <h2>The rule it's using</h2>
             {champ ? (
-              <RuleCard r={champ} title={`${champ.practice ? 'Practice rule' : 'Current rule'} · v${champ.v}`} />
+              <RuleCard r={champ} title={`${champ.practice ? 'Top-scoring idea' : 'Current rule'} · v${champ.v}`} />
             ) : <p className="muted">{v.noRule}</p>}
             {changes.length > 0 && (<>
               <h3>Latest rule changes</h3>
               <ul className="lab-events">{changes.map((e, i) => <li key={i}><span className="tag">{KIND[e.kind] ?? e.kind}</span> {e.text} <span className="muted small">{when(e.t)}</span></li>)}</ul>
             </>)}
-            {challengers.length > 0 && <Disclosure title={`Backup rules being tested on paper (${challengers.length})`}>
-              <p className="muted small">These trade "in the shadow" with no money. One replaces the current rule only if its own live results beat it by at least {pct(S.promoteBy)} a trade over {S.promoteAfter}+ trades. The previous rule stays here, so a worse replacement gets rolled back automatically.</p>
-              {challengers.map(r => <RuleCard key={r.v} r={r} title={`v${r.v}${r.practice ? ' · practice' : ''}${r.wasChampion ? ' · previous rule' : ''}`} small />)}
+            {challengers.length > 0 && <Disclosure title={champ?.practice ? `Other ideas trading on paper (${challengers.length})` : `Backup rules being tested on paper (${challengers.length})`}>
+              {champ?.practice ? <p className="muted small">In learning mode these trade the paper accounts too. The one marked "untried" is the explorer slot, which rotates through ideas with the least live record.</p> : <p className="muted small">These trade "in the shadow" with no money. One replaces the current rule only if its own live results beat it by at least {pct(S.promoteBy)} a trade over {S.promoteAfter}+ trades. The previous rule stays here, so a worse replacement gets rolled back automatically.</p>}
+              {challengers.map(r => <RuleCard key={r.v} r={r} title={`v${r.v}${r.practice ? (r.explorer ? ' · untried idea' : ' · learning') : ''}${r.wasChampion ? ' · previous rule' : ''}`} small />)}
             </Disclosure>}
             {retired.length > 0 && <Disclosure title={`Retired rules (${retired.length})`}>
               <ul className="lab-events">{retired.map(r => <li key={r.v}><b>v{r.v}</b> {r.text} <span className="muted small">— {r.reason}</span></li>)}</ul>

@@ -15,6 +15,7 @@
 //  volbo  volatility breakout: price clears today's open + K × yesterday's range
 //  rev    overreaction reversal after an unusually hard 1-hour fall
 // Each with and without a daily-trend filter (previous close above its 20-day average).
+import { exploreCoach, failFast, recordLive } from './explore.js'
 import { coach, estimate, feeFrac, stats } from './lab.js'
 import { STOCK_ACCOUNTS } from './stocks.js'
 
@@ -46,7 +47,11 @@ export const SDT = {
   promoteBy: 0.001,
   coachEveryDays: 1,
   wfTrainDays: 120, wfTestDays: 30,
-  practiceRules: 3,       // trade the best few on paper while nothing passes (full costs charged)
+  practiceRules: 4,       // learning mode: how many different ideas trade on paper at once
+  minPerDay: 0.5,         // a learning rule must have fired at least every other session over the last 14 days
+  minHoldDays: 21,        // about 15 sessions before an idea can be swapped out
+  failAfter: 15, failZ: -2, benchDays: 21, // bench only if 15+ live trades sit far below its own normal for those shares
+  practiceMaxOpen: 8, practiceLossLimit: 0.05,
   newsGuard: HOUR,        // no new trades within an hour of a high-impact release for that market (CPI, jobs, Fed, RBA…)
   catchUpHours: 30,
 }
@@ -243,25 +248,6 @@ function checkExit(pos, coin, upTo, now, session) {
   return upTo >= now && now >= pos.exitT ? { px: null, why: 'close', t: now } : null
 }
 
-function practiceCoach(state, found, now, S, log) {
-  const byId = new Map(found.map(f => [f.id, f]))
-  for (const r of state.rules) { const f = byId.get(r.id); if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass } }
-  const want = found.filter(f => f.train.n >= S.minTrain).sort((a, b) => b.train.t - a.train.t).slice(0, S.practiceRules)
-  const prevChamp = state.rules.find(r => r.status === 'champion')
-  for (const r of state.rules) {
-    if (r.status === 'retired' || !r.practice) continue
-    if (!want.some(f => f.id === r.id)) { r.status = 'retired'; r.reason = 'no longer among the best few'; log('retire', `v${r.v} (practice) retired: ${r.reason}.`) }
-  }
-  want.forEach((f, k) => {
-    let r = state.rules.find(x => x.id === f.id && x.status !== 'retired')
-    if (!r) { r = { v: state.nextV++, id: f.id, spec: f.spec, text: f.text, since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] } }; state.rules.push(r) }
-    r.practice = true
-    r.status = k === 0 ? 'champion' : 'challenger'
-    r.reason = k === 0 ? "practice: best on older data, but hasn't passed the checks after costs" : 'practice: followed in the shadow'
-  })
-  const champ = state.rules.find(r => r.status === 'champion')
-  if (champ && champ !== prevChamp) log('promote', `Practice mode: no rule has passed the checks, so v${champ.v} is traded on paper anyway (full costs charged): ${champ.text}`)
-}
 
 /**
  * market = { coins: [{ base, market, t,o,h,l,c,d }], live: { BASE: usd }, audPerUsd,
@@ -284,7 +270,7 @@ export function stepStockDay(state, market, now, S = SDT) {
       const px = x.px ?? price(s.base)
       if (!(px > 0)) continue
       const r = ruleByV.get(s.v)
-      if (r) push((r.live ||= { trades: [] }).trades, { t: x.t, base: s.base, g: px / s.entry - 1 }, 400)
+      if (r) { push((r.live ||= { trades: [] }).trades, { t: x.t, base: s.base, g: px / s.entry - 1 }, 400); recordLive(state, r, x.t, s.base, px / s.entry - 1) }
       state.shadow.splice(state.shadow.indexOf(s), 1)
     }
     for (const a of Object.values(state.accounts)) {
@@ -306,7 +292,7 @@ export function stepStockDay(state, market, now, S = SDT) {
   }
 
   // 1. daily re-test + walk-forward (needs the full history); practice mode while nothing passes
-  const noChamp = !state.rules.some(r => r.status === 'champion')
+  const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && !state.learning && !state.rules.some(r => r.status === 'champion' && !r.practice))
   if (market.full && market.coins.length && (now - state.lastCoach >= S.coachEveryDays * DAY - 2 * HOUR || noChamp)) {
     const data = { coins: market.coins }
     const found = discoverStockDay(data, S)
@@ -314,7 +300,7 @@ export function stepStockDay(state, market, now, S = SDT) {
     if (found.some(f => f.pass)) {
       for (const r of state.rules) if (r.practice && r.status !== 'retired') { r.status = 'retired'; r.reason = 'a rule passed the checks, so practice ended' }
       coach(state, found, now, S)
-    } else practiceCoach(state, found, now, S, log)
+    } else exploreCoach(state, found, now, S, log)
     state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
@@ -354,14 +340,14 @@ export function stepStockDay(state, market, now, S = SDT) {
       const exitT = sessionOpen ? Math.min(sess.end, entryT + holdBars * HOUR) : entryT + holdBars * HOUR
       const pos0 = { base: coin.base, t: entryT, stop: p * (1 - sp), exitT, holdBars, kind: r.spec.kind }
       if (!state.shadow.some(s => s.v === r.v && s.base === coin.base)) state.shadow.push({ ...pos0, v: r.v, entry: p })
-      if (r !== champ) continue
+      if (r !== champ && !r.practice) continue   // learning mode: every active idea trades
       // professional desks stand aside around market-moving releases: spreads widen and prices jump
       const news = S.newsGuard ? (market.events || []).find(e => e.market === coin.market && e.impact === 'High' && Math.abs(e.t - entryT) <= S.newsGuard) : null
       for (const a of Object.values(state.accounts)) {
         if (a.market !== coin.market) continue
         if (news) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `high-impact news nearby: ${news.title} at ${hhmm(news.t)} Darwin` }, 30); continue }
         const dd = value(a) / (state.day.start[a.id] || a.startAud) - 1
-        if (dd <= -S.dailyLossLimit) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
+        if (dd <= -(r.practice ? S.practiceLossLimit : S.dailyLossLimit)) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
         enter(a, r, coin.base, p, sp, pos0, market, now, S, log)
       }
     }
@@ -369,6 +355,7 @@ export function stepStockDay(state, market, now, S = SDT) {
   for (const coin of market.coins) state.lastBars[coin.market] = Math.max(state.lastBars[coin.market] || 0, coin.t[coin.t.length - 1])
   state.lastSignalDay = Math.max(0, ...Object.values(state.lastBars))
   exits(now)
+  if (failFast(state, now, S, log)) state.lastCoach = 0   // refill the slot on the next full run
   state.events.sort((a, b) => a.t - b.t)
 
   // 4. valuation
@@ -392,7 +379,7 @@ export function stepStockDay(state, market, now, S = SDT) {
 
 function enter(a, r, base, p, sp, pos0, market, now, S, log) {
   const note = why => push(a.lastBlocked, { t: now, base, v: r.v, why }, 30)
-  if (a.positions.some(x => x.base === base)) return
+  if (a.positions.some(x => x.base === base && (x.v === r.v || !r.practice))) return
   const spread = market.quotes?.[a.id]?.[base]
   if (!(spread >= 0)) { a.blocked.quote++; note(`no ${a.exchange} price for ${base}`); return }
   const rate = market.audPerUsd
@@ -400,7 +387,7 @@ function enter(a, r, base, p, sp, pos0, market, now, S, log) {
   const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
   const invested = equity - cashUsd
   const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested)
-  if (a.positions.length >= S.maxOpen || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
+  if (a.positions.length >= (r.practice ? S.practiceMaxOpen : S.maxOpen) || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fee = feeFrac(a, alloc, p, rate)
   const cost = 2 * fee + spread + 2 * S.slippage
   const est = estimate(r.all)

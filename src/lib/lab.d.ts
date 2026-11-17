@@ -2,7 +2,7 @@ export interface Stats { n: number; mean: number; se: number; t: number; win: nu
 export interface RuleSpec { kind: string; n?: number; k?: number; regime: string; H: number }
 export interface LabRule {
   v: number; id: string; spec: RuleSpec; text: string; status: 'champion' | 'challenger' | 'retired'
-  since: number; reason?: string; wasChampion?: boolean; practice?: boolean; vsIndex?: Stats; train: Stats; valid: Stats; all: Stats; pass: boolean
+  since: number; reason?: string; wasChampion?: boolean; practice?: boolean; explorer?: boolean; score?: number; vsIndex?: Stats; train: Stats; valid: Stats; all: Stats; pass: boolean
   live?: { trades: { t: number; base: string; g: number }[] }
 }
 export interface Found { id: string; text: string; H: number; pass: boolean; train: Stats; valid: Stats; all: Stats }
@@ -17,6 +17,7 @@ export interface Account {
 }
 export interface LabEvent { t: number; kind: string; text: string }
 export interface LabState {
+  learning?: { since: number; active: number; eligible: number; benched: number; minHoldDays?: number; failAfter?: number }
   version: number; created: number; lastRun: number | null; lastSignalDay: number; lastCoach: number; nextV: number
   rules: LabRule[]; shadow: { v: number; base: string; entry: number; t: number; stop: number; exitT: number }[]
   events: LabEvent[]; history: ({ t: number } & Record<string, number>)[]
