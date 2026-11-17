@@ -65,13 +65,13 @@ export const sdRuleId = r => `${r.kind}:${r.n ?? r.g ?? r.K ?? r.k}:${r.last ?? 
 
 export function describeStockDay(r) {
   const tf = r.tf ? ', only while the share is in a daily uptrend' : ''
-  const h = x => `${x} hour${x > 1 ? 's' : ''}`
+  const h = x => (x > 1 ? `${x} hours` : 'hour')
   switch (r.kind) {
     case 'imom': return `If the share rose over the session's first ${h(r.n)}, buy for its last ${h(r.last)}${tf}.`
     case 'gap': return `After a ${r.g === 1 ? 'large' : 'very large'} opening gap down, buy after the first hour and sell at the close${tf}.`
     case 'orb': return `Buy when price clears the high of the session's first ${h(r.n)}; sell at the close${tf}.`
     case 'volbo': return `Buy when price rises ${r.K} × yesterday's range above today's open; sell at the close${tf}.`
-    case 'rev': return `Buy after an unusually hard 1-hour fall (${r.k}× the usual move) and hold up to ${h(r.H)}, sold by the close${tf}.`
+    case 'rev': return `Buy after an unusually hard 1-hour fall (${r.k}× the usual move) and hold up to ${r.H} hour${r.H > 1 ? 's' : ''}, sold by the close${tf}.`
     default: return r.kind
   }
 }
