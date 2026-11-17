@@ -27,7 +27,7 @@ const until = (t: number) => {
   const d = t - Date.now()
   if (d < 0) return 'just happened'
   const h = Math.floor(d / 3_600_000)
-  return h >= 48 ? `in ${Math.round(h / 24)} days` : h >= 1 ? `in ${h} h ${Math.round((d % 3_600_000) / 60_000)} min` : `in ${Math.round(d / 60_000)} min`
+  return h >= 48 ? `in ${Math.round(h / 24)} days` : h >= 1 ? `in ${h} h ${Math.floor((d % 3_600_000) / 60_000)} min` : `in ${Math.max(1, Math.floor(d / 60_000))} min`
 }
 
 export default function EconCalendar() {

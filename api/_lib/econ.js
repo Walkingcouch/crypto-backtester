@@ -74,14 +74,20 @@ export async function fomcMeetings() {
 /** Upcoming RBA decisions (2:30pm Sydney on the meeting's second day; press conference 3:30pm). */
 export async function rbaMeetings() {
   const html = await get('https://www.rba.gov.au/schedules-events/board-meeting-schedules.html', 12000)
-  const text = decode(html).replace(/\s+/g, ' ')
+  const text = decode(html.replace(/&ndash;|&#8211;/g, '–').replace(/&nbsp;|&#160;/g, ' ')).replace(/\s+/g, ' ')
   const out = [], now = Date.now()
-  const re = /(\d{1,2})\s*(?:[–-]|and)\s*(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})/gi
-  let m
-  while ((m = re.exec(text))) {
-    const y = +m[4], mon = MONTHS.indexOf(m[3].toLowerCase()), d = +m[2]
-    const off = sydOffset(y, mon, d)
-    out.push({ t: Date.UTC(y, mon, d, 14 - off, 30), bank: 'Reserve Bank of Australia', title: "Cash-rate decision, then the Governor's press conference an hour later", market: 'ASX' })
+  // "Board meeting schedules 2026 … 2–3 February … 16–17 March …": two-day ranges are the
+  // Monetary Policy Board (the Payments System Board meets on single days)
+  const parts = text.split(/Board meeting schedules (\d{4})/)
+  for (let p = 1; p < parts.length; p += 2) {
+    const y = +parts[p]
+    const re = /(\d{1,2})\s*[–-]\s*(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)/g
+    let m
+    while ((m = re.exec(parts[p + 1] || ''))) {
+      const mon = MONTHS.indexOf(m[3].toLowerCase()), d = +m[2]
+      const off = sydOffset(y, mon, d)
+      out.push({ t: Date.UTC(y, mon, d, 14 - off, 30), bank: 'Reserve Bank of Australia', title: "Cash-rate decision, then the Governor's press conference an hour later", market: 'ASX' })
+    }
   }
   const seen = new Set()
   return out.filter(e => e.t > now - DAY && !seen.has(e.t) && seen.add(e.t)).sort((a, b) => a.t - b.t).slice(0, 4)
