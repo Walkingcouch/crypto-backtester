@@ -15,9 +15,9 @@ export const EXPLORE = {
   coachEveryDays: 0,      // the coach runs every time (graduates appear any run)
   promoteAfter: 12,
   population: 40,         // ideas kept between runs
-  randomPerRun: 16,
-  mutantsPerRun: 20,
-  crossPerRun: 6,
+  randomPerRun: 48,
+  mutantsPerRun: 60,
+  crossPerRun: 18,
   minTrades: 30,          // to be ranked at all
   minGradTrades: 60,      // to get a look at the held-back data
   complexityCost: 0.3,    // fitness lost per extra condition

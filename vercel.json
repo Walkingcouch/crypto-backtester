@@ -7,7 +7,7 @@
   ],
   "functions": {
     "api/forecast-cron.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/chatter.js": {
       "maxDuration": 30
@@ -16,16 +16,16 @@
       "maxDuration": 300
     },
     "api/lab-cron.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/delisted.js": {
       "maxDuration": 300
     },
     "api/explorer-cron.js": {
-      "maxDuration": 120
+      "maxDuration": 300
     },
     "api/daytrade-cron.js": {
-      "maxDuration": 300
+      "maxDuration": 800
     }
   },
   "headers": [
