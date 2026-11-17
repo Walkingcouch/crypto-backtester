@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
+    "fflate": "^0.8.3",
     "lightweight-charts": "^5.2.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router-dom": "^7.18.5"
+    "react-router-dom": "^7.18.5",
+    "unpdf": "^1.9.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

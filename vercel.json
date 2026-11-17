@@ -35,6 +35,9 @@
     },
     "api/stocks-day-cron.js": {
       "maxDuration": 300
+    },
+    "api/signals-cron.js": {
+      "maxDuration": 300
     }
   },
   "headers": [
@@ -88,6 +91,10 @@
     {
       "path": "/api/stocks-day-cron",
       "schedule": "5,35 13-21 * * 1-5"
+    },
+    {
+      "path": "/api/signals-cron",
+      "schedule": "10,40 * * * *"
     }
   ]
 }
