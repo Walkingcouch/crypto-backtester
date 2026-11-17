@@ -72,6 +72,14 @@
     {
       "path": "/api/stocks-day-cron",
       "schedule": "5,35 * * * *"
+    },
+    {
+      "path": "/api/stocks-cron",
+      "schedule": "45 10 17 11 *"
+    },
+    {
+      "path": "/api/stocks-explorer-cron",
+      "schedule": "47 10 17 11 *"
     }
   ]
 }
