@@ -1,30 +1,25 @@
-// temporary: which data sources can the server reach?
+// temporary: read terms pages and test endpoints from the server
+const strip = h => h.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|&#160;/g, ' ').replace(/\s+/g, ' ')
 export default async function handler(req, res) {
   const out = {}
-  const t = async (k, url, headers = {}) => {
-    const t0 = Date.now()
+  const t = async (k, url, n = 1500, find) => {
     try {
-      const r = await fetch(url, { headers: { 'user-agent': 'Backtester research contact@example.com', accept: '*/*', ...headers } })
-      const txt = await r.text()
-      out[k] = { status: r.status, ms: Date.now() - t0, len: txt.length, head: txt.slice(0, 400).replace(/\s+/g, ' ') }
+      const r = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0', accept: '*/*' } })
+      const raw = await r.text(), txt = /json/.test(r.headers.get('content-type') || '') ? raw : strip(raw)
+      const i = find ? Math.max(0, txt.search(find)) : 0
+      out[k] = { status: r.status, text: txt.slice(i, i + n) }
     } catch (e) { out[k] = { error: String(e).slice(0, 200) } }
   }
   await Promise.all([
-    t('houseClerkIndex', 'https://disclosures-clerk.house.gov/public_disc/financial-pdfs/2026FD.zip'),
-    t('houseClerkSearch', 'https://disclosures-clerk.house.gov/FinancialDisclosure'),
-    t('senateEfd', 'https://efdsearch.senate.gov/search/home/'),
-    t('secForm4Feed', 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&company=&dateb=&owner=include&count=40&output=atom'),
-    t('secFullIndex', 'https://www.sec.gov/Archives/edgar/daily-index/'),
-    t('openinsider', 'http://openinsider.com/latest-cluster-buys'),
-    t('asxAnn', 'https://asx.api.markitdigital.com/asx-research/1.0/markets/announcements?itemsPerPage=20&summaryCountsDate=&page=0'),
-    t('trumpsTruthRss', 'https://www.trumpstruth.org/feed'),
-    t('okxFunding', 'https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP'),
-    t('okxOI', 'https://www.okx.com/api/v5/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP'),
-    t('bybitTickers', 'https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT'),
-    t('binanceFapi', 'https://fapi.binance.com/fapi/v1/premiumIndex?symbol=BTCUSDT'),
-    t('aphRegister', 'https://www.aph.gov.au/Senators_and_Members/Members/Register'),
-    t('capitolTrades', 'https://www.capitoltrades.com/trades'),
-    t('politiciantradesAu', 'https://politiciantrades.au/'),
+    t('ptRobots', 'https://politiciantrades.au/robots.txt', 600),
+    t('ptTerms', 'https://politiciantrades.au/terms', 2500),
+    t('ptHome', 'https://politiciantrades.au/', 2500, /trade|Trade/),
+    t('ttRobots', 'https://www.trumpstruth.org/robots.txt', 600),
+    t('ttAbout', 'https://www.trumpstruth.org/about', 2000),
+    t('efdHome', 'https://efdsearch.senate.gov/search/home/', 2500, /agree|Prohibit|prohibit/),
+    t('asxCo', 'https://asx.api.markitdigital.com/asx-research/1.0/companies/bhp/announcements', 1500),
+    t('asxCo2', 'https://www.asx.com.au/asx/1/company/BHP/announcements?count=20&market_sensitive=false', 1500),
+    t('openPol', 'https://openpolitics.com.au/', 1500, /trade|share/i),
   ])
   res.json(out)
 }
