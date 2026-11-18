@@ -7,6 +7,6 @@ import { labHandler } from './_lib/labrun.js'
 
 export default labHandler({
   sid: 'daytrade', universe: DT.universe, events: true, interval: '1h', minBars: 600,
-  pages: (saved, now) => (!saved || !saved.rules?.some(r => r.status === 'champion') || (saved.learning?.v !== 2 && !saved.rules?.some(r => r.status === 'champion' && !r.practice)) || now - (saved.lastCoach || 0) >= DT.coachEveryDays * DAY - HOUR ? 36 : 1),
+  pages: (saved, now) => (!saved || !saved.rules?.some(r => r.status === 'champion') || !saved.found?.some(f => f.rigor) || (saved.learning?.v !== 2 && !saved.rules?.some(r => r.status === 'champion' && !r.practice)) || now - (saved.lastCoach || 0) >= DT.coachEveryDays * DAY - HOUR ? 36 : 1),
   stepFn: (s, m, now) => stepDay(s, m, now, DT),
 })

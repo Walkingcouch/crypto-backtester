@@ -296,7 +296,8 @@ export function stepStockDay(state, market, now, S = SDT) {
 
   // 1. daily re-test + walk-forward (needs the full history); practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  if (market.full && market.coins.length && (now - state.lastCoach >= S.coachEveryDays * DAY - 2 * HOUR || noChamp)) {
+  const unchecked = state.found?.length && !state.found.some(f => f.rigor)
+  if (market.full && market.coins.length && (now - state.lastCoach >= S.coachEveryDays * DAY - 2 * HOUR || noChamp || unchecked)) {
     const data = { coins: market.coins }
     const found = discoverStockDay(data, S, state)
     state.walk = walkForwardStockDay(found, data, S)

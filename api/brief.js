@@ -77,7 +77,7 @@ export default async function handler(req, res) {
       if (proven.length) decisions.push(`${L.name}: rule v${proven[0].v} has passed every check. Keep paper trading it for at least 30 trades and 3 months before thinking about real money.`)
       labs.push({
         id: L.id, name: L.name, path: L.path, updated, late: !!late, accounts: accts,
-        mode: active.some(r => r.practice) ? 'learning' : active.length ? 'proven rules' : 'cash',
+        mode: active.some(r => r.practice) ? 'learning' : !active.length ? 'cash' : proven.length ? 'proven rules' : 'trading rules that have not passed the new checks',
         active: active.map(r => ({ v: r.v, text: r.text, status: r.status, explorer: !!r.explorer, checks: r.rigor ? Object.values(r.rigor.checks).filter(Boolean).length : null })),
         tested: (S.found || []).length, passingAll: passing, trials: S.trials || S.explore?.tried || null,
         best: best ? { text: best.text, checks: Object.values(best.rigor.checks).filter(Boolean).length, sharpe: best.rigor.sharpe, dsr: best.rigor.dsr } : null,
