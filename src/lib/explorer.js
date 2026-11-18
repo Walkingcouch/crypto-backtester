@@ -128,6 +128,15 @@ export function evolve(data, S = EXPLORE, state, now) {
   ex.graduates = ex.graduates.slice(0, S.graduates)
   ex.lastRun = { at: now, added, bar }
 
+  // graduates from before the professional checks existed must pass them too, or they leave
+  ex.graduates = ex.graduates.filter(g => {
+    if (g.rigor) return true
+    const ev = events(g.spec, data)
+    const [c] = assess([{ id: g.id, spec: g.spec, ev, pass: true, train: g.train }], data, { cost: S.refCost, trials: ex.tried, family: () => g.id })
+    g.rigor = c.rigor
+    if (!c.pass) ex.log.push({ t: now, id: g.id, text: g.text, trainT: g.train.t, valid: g.valid, passed: false, rigor: c.rigor, note: 'removed: failed the new professional checks' })
+    return c.pass
+  })
   // refresh graduates' full-period stats (the cost gate uses them) and hand them to the coach
   return ex.graduates.map(g => {
     const all = stats(events(g.spec, data))
