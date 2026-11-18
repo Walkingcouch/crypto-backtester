@@ -4,6 +4,7 @@
 // key (or with ?dry=1) it runs on a copy and saves nothing: the pages use that as a preview.
 import { newState, summary } from '../../src/lib/lab.js'
 import { rpc, sb } from './forecaster.js'
+import { weekCalendar } from './econ.js'
 
 export const API = 'https://data-api.binance.vision/api/v3'
 export const DAY = 86_400_000
@@ -131,6 +132,7 @@ export function labHandler(opts) {
         quotes: { john: { ...cs }, mark: cb, binance: bn }, estimated: { john: {} },
       }
       for (const c of market.coins) if (market.quotes.john[c.base] == null) { market.quotes.john[c.base] = COINSPOT_EST_SPREAD; market.estimated.john[c.base] = true }
+      if (opts.events) market.events = await weekCalendar().catch(() => [])
       const now = Date.now()
       const state = stepFn(saved ? structuredClone(saved) : newState(rate, now), market, now)
       if (!dry) saved = await rpc('lab_put', { sid, payload: state })

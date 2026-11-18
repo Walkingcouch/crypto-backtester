@@ -7,6 +7,7 @@
 //  - Each idea gets ONE look at the held-back last 180 days, and only once it clears a bar that
 //    RISES with the number of ideas tried (the expected best t-score of that many coin flips).
 //  - Simpler ideas are preferred: each extra condition costs fitness.
+import { assess } from './rigor.js'
 import { comboId, describeCombo, HOLDS, randomCond, STOPS, validCombo } from './blocks.js'
 import { DAY, events, LAB, stats } from './lab.js'
 
@@ -116,8 +117,11 @@ export function evolve(data, S = EXPLORE, state, now) {
     p.valid = stats(ev.filter(e => e.t >= cut), S.refCost)
     p.all = stats(ev)
     p.passed = p.valid.n >= 15 && p.valid.mean > 0 && p.valid.t >= 1
-    ex.log.push({ t: now, id: p.id, text: p.text, trainT: p.train.t, valid: p.valid, passed: p.passed })
-    if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, gen: p.gen, at: now })
+    // the same professional checks as the fixed labs, with every idea ever bred counted as a try
+    const [checked] = assess([{ id: p.id, spec: p.spec, ev, pass: p.passed, train: p.train }], data, { cost: S.refCost, trials: ex.tried, family: () => p.id })
+    p.rigor = checked.rigor; p.basicPassed = p.passed; p.passed = checked.pass
+    ex.log.push({ t: now, id: p.id, text: p.text, trainT: p.train.t, valid: p.valid, passed: p.passed, rigor: p.rigor })
+    if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, rigor: p.rigor, gen: p.gen, at: now })
   }
   ex.log = ex.log.slice(-60)
   ex.graduates.sort((a, b) => b.train.t - a.train.t)
@@ -128,6 +132,6 @@ export function evolve(data, S = EXPLORE, state, now) {
   return ex.graduates.map(g => {
     const all = stats(events(g.spec, data))
     g.all = all
-    return { id: g.id, spec: g.spec, text: g.text, H: g.spec.H, train: g.train, valid: g.valid, all, pass: true }
+    return { id: g.id, spec: g.spec, text: g.text, H: g.spec.H, train: g.train, valid: g.valid, all, rigor: g.rigor, pass: true }
   })
 }

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { Disclosure, Info } from '../components/Info'
 import { fmtMoney, useCurrency } from '../lib/currency'
-import { estimate, feeFrac, LAB, type LabRule, type LabState } from '../lib/lab'
+import { estimate, feeFrac, LAB, type LabRule, type LabState, type Rigor, type Account } from '../lib/lab'
 import { EXPLORE, hurdle } from '../lib/explorer'
 import { DT } from '../lib/daytrade'
 import { STOCK, STOCK_EXPLORE, US, ASX } from '../lib/stocks'
 import { SDT, US_DAY, ASX_DAY } from '../lib/stockday'
 import { supabase } from '../lib/supabase'
+import { cardFor } from '../lib/cards'
 import { fmtPrice } from '../lib/markets'
 
 const pct = (x: number, d = 1) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(x * 100).toFixed(d)}%` : '–')
@@ -109,7 +110,9 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
       <li><b>Checked on every hourly bar</b> since the buy, including gaps: if a bar opens below the stop, the sale happens at that open.</li>
       <li><b>Market close:</b> everything is sold at that market's close, win or lose. Some rules sell earlier, after a set number of hours.</li>
       <li><b>Risk per trade:</b> each position loses at most about {(S.riskPerTrade * 100).toFixed(1)}% of the account at its stop; at most {pct0(S.maxPosition)} in one share and {S.maxOpen} positions at once.</li>
-      <li><b>Daily loss limit:</b> after a {pct0(SDT.dailyLossLimit)} fall in a day, no new trades until the next day.</li>
+      <li><b>Daily loss limit:</b> after a {pct0(SDT.dailyLossLimit)} fall in a day ({pct0(SDT.practiceLossLimit)} in learning mode), no new trades until the next day.</li>
+      <li><b>Big releases:</b> no new trades within an hour of a high-impact release for that market (CPI, jobs, Fed, RBA), then half size for the rest of that session.</li>
+      <li><b>Losing streak:</b> after a {pct0(SDT.ddCut)} fall from an account's best value, every new trade is half size until it recovers.</li>
     </ul>),
   },
   swing: {
@@ -145,7 +148,9 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
       <li><b>Checked on every hourly candle</b> since the buy, including gaps: if a candle opens below the stop, the sale happens at that open.</li>
       <li><b>End of day:</b> everything is sold by 00:00 UTC (9:30am Darwin), win or lose. Some rules sell earlier, after a set number of hours or when price gets back to its 24-hour average.</li>
       <li><b>Risk per trade:</b> each position loses at most about {(S.riskPerTrade * 100).toFixed(1)}% of the account at its stop; at most {pct0(S.maxPosition)} in one coin and {S.maxOpen} positions at once.</li>
-      <li><b>Daily loss limit:</b> after a {pct0(DT.dailyLossLimit)} fall in a day, no new trades until the next UTC day.</li>
+      <li><b>Daily loss limit:</b> after a {pct0(DT.dailyLossLimit)} fall in a day ({pct0(DT.practiceLossLimit)} in learning mode), no new trades until the next UTC day.</li>
+      <li><b>Big US releases:</b> no new trades 30 minutes either side of a high-impact US release (CPI, jobs, Fed), then half size for the rest of that UTC day.</li>
+      <li><b>Losing streak:</b> after a {pct0(DT.ddCut)} fall from an account's best value, every new trade is half size until it recovers.</li>
     </ul>),
   },
 }
@@ -281,10 +286,11 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
                   )})}</tbody></table></div>
                   : <p className="muted small">Nothing held: waiting for the next signal that clears the cost gate.</p>}
                 {a.closed.length > 0 && <Disclosure title={`Finished trades (${a.stats.n})`}>
+                  <p className="small"><button className="btn small" onClick={() => downloadTrades(a, v.title)}>Download trades (CSV)</button> <span className="muted">R = result as a multiple of the risk taken (distance to the stop). Expected = what the rule normally makes on that {shares ? 'share' : 'coin'}.</span></p>
                   <div className="table-wrap"><table className="record">
-                    <thead><tr><th>{shares ? 'Share' : 'Coin'}</th><th>Result after costs</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
+                    <thead><tr><th>{shares ? 'Share' : 'Coin'}</th><th>Result after costs</th><th>R</th><th>Expected</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
                     <tbody>{a.closed.slice().reverse().map((c, i) => (
-                      <tr key={i}><td><b>{c.base}</b></td><td className={cls(c.net)}>{pct(c.net)}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss hit' : 'Time limit'}</td><td>{when(c.exitT)}</td></tr>
+                      <tr key={i}><td><b>{c.base}</b>{c.v ? <div className="muted small">rule v{c.v}</div> : null}</td><td className={cls(c.net)}>{pct(c.net)}</td><td className={cls(c.rMult ?? 0)}>{c.rMult != null ? `${c.rMult > 0 ? '+' : ''}${c.rMult.toFixed(2)}R` : '–'}</td><td className="muted">{c.expected != null ? pct(c.expected) : '–'}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss hit' : 'Time limit'}</td><td>{when(c.exitT)}</td></tr>
                     ))}</tbody></table></div>
                 </Disclosure>}
               </div>
@@ -376,18 +382,54 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
   )
 }
 
+const CHECK_TEXT: Record<keyof Rigor['checks'], [string, string]> = {
+  random: ['Beats random entries', 'Beat at least 95% of 200 runs that bought the same coins at random times and held them as long'],
+  doubleFee: ['Survives double fees', 'Still makes money if trading costs are twice what we assume'],
+  neighbours: ['Nearby settings work too', 'At least half the other settings of the same idea also make money after costs, so it is not a lucky spike'],
+  deflated: ['Real after counting tries', 'Deflated Sharpe of at least 95%: the result is unlikely to be the luckiest of all the rules this lab has tried'],
+}
+
+function RigorBox({ g }: { g: Rigor }) {
+  const years = Object.entries(g.years || {})
+  return (
+    <div className="explain-box small" style={{ marginTop: 8 }}>
+      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{Object.values(g.checks).filter(Boolean).length} of 4 passed</span>}</div>
+      <ul className="lab-events" style={{ margin: '6px 0' }}>
+        {(Object.keys(CHECK_TEXT) as (keyof Rigor['checks'])[]).map(k => (
+          <li key={k}>{g.checks[k] ? '✓' : '✗'} {CHECK_TEXT[k][0]} <Info>{CHECK_TEXT[k][1]}</Info>
+            <span className="muted"> · {k === 'random' ? `random runs beat it ${pct0(g.randomP)} of the time` : k === 'doubleFee' ? `${pct(g.meanNet)} a trade after one set of costs` : k === 'neighbours' ? `${g.neighbours.up} of ${g.neighbours.n} other settings make money` : `${pct0(g.dsr)} after ${g.trials.toLocaleString()} rules tried`}</span></li>
+        ))}
+      </ul>
+      <div className="muted">Daily Sharpe {g.sharpe.toFixed(2)} over {g.days.toLocaleString()} days · at 10% of the account per trade: {pct(g.annual)} a year, worst fall {pct0(g.maxDD)}, worst fall in 95% of shuffled orders {pct0(g.shuffleDD)}</div>
+      {years.length > 0 && <div className="muted">By year (a trade, after costs): {years.map(([y, o]) => <span key={y} className={cls(o.mean)}>{y} {pct(o.mean)} ({o.n}) </span>)}</div>}
+    </div>
+  )
+}
+
+function downloadTrades(a: Account, lab: string) {
+  const cols = ['account', 'rule', 'asset', 'entry_time', 'entry_price', 'fill_price', 'stop', 'exit_time', 'exit_price', 'size_usd', 'cost_est', 'net_after_costs', 'gross', 'r_multiple', 'expected', 'why_sold']
+  const iso = (t: number) => new Date(t).toISOString()
+  const rows = a.closed.map(c => [a.exchange, c.v, c.base, iso(c.t), c.entryPx, c.fillPx, c.stop, iso(c.exitT), c.exitPx, c.costUsd?.toFixed(2), c.cost, c.net, c.gross, c.rMult ?? '', c.expected ?? '', c.why])
+  const csv = [cols, ...rows].map(r => r.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+  const el = document.createElement('a'); el.href = url; el.download = `${lab} - ${a.exchange} trades.csv`.replace(/[^\w .-]/g, ''); el.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: boolean }) {
   const live = liveRecord(r)
   return (
     <div className={`lab-rule ${small ? 'small' : ''}`}>
       <div className="lab-rule-head"><span className={`tag ${r.status === 'champion' ? 'green' : ''}`}>{title}</span>{r.reason && <span className="muted small">{r.reason}</span>}</div>
       <p className="lab-rule-text">{r.text}</p>
+      {cardFor(r.spec?.kind) && <div className="muted small" style={{ margin: '4px 0 8px' }}><b>Why it could work:</b> {cardFor(r.spec?.kind)!.edge} <b>What kills it:</b> {cardFor(r.spec?.kind)!.fails}</div>}
       <div className="lab-rule-stats">
         <span>Past signals: <b className={cls(r.all.mean)}>{pct(r.all.mean)}</b> a trade before costs, won {pct0(r.all.win)} of {r.all.n}</span>
         <span>Conservative estimate: <b>{pct(estimate(r.all))}</b></span>
         {r.vsIndex && <span>Versus the market index: <b className={cls(r.vsIndex.mean)}>{pct(r.vsIndex.mean)}</b> a trade over the same days, before costs</span>}
         <span>Live on paper: {live.n ? <><b className={cls(live.mean)}>{pct(live.mean)}</b> a trade over {live.n}, won {pct0(live.win)}</> : 'no closed trades yet'}</span>
       </div>
+      {r.rigor && <RigorBox g={r.rigor} />}
     </div>
   )
 }

@@ -12,6 +12,7 @@
 //  volbo   volatility breakout: price clears today's open + K × yesterday's range
 //  mr      mean reversion to the 24-hour average, only in calm markets
 // Each with and without a daily-trend filter (price above its ~20-day average).
+import { assess, countTrials } from './rigor.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
 import { coach, estimate, stats } from './lab.js'
 
@@ -29,7 +30,7 @@ export const DT = {
   dailyLossLimit: 0.02,   // no new trades for the rest of the UTC day after a 2% drop
   validDays: 60,
   refCost: 0.003,         // round trip used for choosing rules (Binance-level costs)
-  minTrain: 100, minTrainT: 2.5, minValid: 20,
+  minTrain: 100, minTrainT: 2.5, minValid: 50,   // 50+ trades in the held-back window: fewer is an anecdote
   maxChallengers: 3,
   promoteAfter: 30,
   promoteBy: 0.001,
@@ -42,7 +43,9 @@ export const DT = {
   minHoldDays: 14,        // every idea gets at least two weeks before it can be swapped out
   failAfter: 20, failZ: -2, benchDays: 14, // bench only if 20+ live trades sit far below its own normal for those coins
   practiceMaxOpen: 8, practiceLossLimit: 0.05,
-  catchUpHours: 24,       // signals from completed hours not yet acted on are taken at that hour's price
+  catchUpHours: 24,
+  newsGuard: 30 * 60_000,  // no new entries 30 min either side of a high-impact US release (CPI, jobs, Fed)
+  ddCut: 0.10,             // after a 10% fall from an account's peak, every new trade is half size       // signals from completed hours not yet acted on are taken at that hour's price
 }
 
 export function allDayRules() {
@@ -166,10 +169,10 @@ export function dayEvents(r, data) {
 }
 
 /** Re-test all rules: chosen on older data, checked on the held-back last 60 days. */
-export function discoverDay(data, S = DT) {
+export function discoverDay(data, S = DT, state) {
   const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
   const cut = last - S.validDays * DAY
-  return allDayRules().map(r => {
+  const found = allDayRules().map(r => {
     const ev = dayEvents(r, data)
     r.ev = ev
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
@@ -177,7 +180,8 @@ export function discoverDay(data, S = DT) {
     const all = stats(ev)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
     return { ...r, spec: { kind: r.kind, n: r.n, k: r.k, K: r.K, z: r.z, last: r.last, H: r.H, tf: r.tf }, text: describeDay(r), train, valid, all, pass, ev }
-  }).sort((a, b) => (b.pass - a.pass) || b.train.t - a.train.t)
+  })
+  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind })
 }
 
 /**
@@ -260,7 +264,7 @@ export function stepDay(state, market, now, S = DT) {
         a.cashAud += proceeds * rate
         a.positions.splice(a.positions.indexOf(pos), 1)
         a.stats.n++; a.stats.sumNet += net; if (net > 0) a.stats.wins++
-        push(a.closed, { ...pos, exitT: x.t, exitPx: px, net, gross: px / pos.entryPx - 1, why: x.why === 'target' ? 'time' : x.why }, 300)
+        push(a.closed, { ...pos, rMult: pos.stop && pos.entryPx ? +(net / (1 - pos.stop / pos.entryPx)).toFixed(2) : null, expected: ruleByV.get(pos.v)?.norm?.[pos.base]?.m ?? ruleByV.get(pos.v)?.all?.mean ?? null, exitT: x.t, exitPx: px, net, gross: px / pos.entryPx - 1, why: x.why === 'target' ? 'time' : x.why }, 300)
         log('trade', `${a.owner}: sold ${pos.base} (${x.why === 'stop' ? 'stop-loss' : x.why === 'target' ? 'back to average' : 'end of hold'})${x.t < now - 30 * 60_000 ? ` at ${hhmm(x.t)} UTC` : ''} ${pct(net)} after costs.`, x.t)
       }
     }
@@ -269,14 +273,14 @@ export function stepDay(state, market, now, S = DT) {
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp)) && market.coins.length) {
-    const found = discoverDay(data, S)
+    const found = discoverDay(data, S, state)
     state.walk = walkForward(found, data, S)
     if (found.some(f => f.pass)) {
       for (const r of state.rules) if (r.practice && r.status !== 'retired') { r.status = 'retired'; r.reason = 'a rule passed the checks, so practice ended' }
       coach(state, found, now, S)
     } else if (S.practiceRules) exploreCoach(state, found, now, S, log)
     else coach(state, found, now, S)
-    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all }))
+    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all, rigor: f.rigor }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
     ruleByV.clear(); for (const r of state.rules) ruleByV.set(r.v, r)
@@ -312,10 +316,17 @@ export function stepDay(state, market, now, S = DT) {
         const pos0 = { base: coin.base, t: entryT, stop: p * (1 - sp), exitT, kind: r.spec.kind, sma24: D.sma24[i] }
         if (!state.shadow.some(s => s.v === r.v && s.base === coin.base)) state.shadow.push({ ...pos0, v: r.v, entry: p })
         if (r !== champ && !r.practice) continue   // learning mode: every active idea trades
+        // big US releases (CPI, jobs, Fed) move crypto too: stand aside around them, then trade half size for the rest of the day
+        const hi = (market.events || []).filter(e => e.market === 'US' && e.impact === 'High')
+        const news = S.newsGuard ? hi.find(e => Math.abs(e.t - entryT) <= S.newsGuard) : null
+        const after = hi.some(e => e.t < entryT && Math.floor(e.t / DAY) === Math.floor(entryT / DAY))
         for (const a of Object.values(state.accounts)) {
+          if (news) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `high-impact US news nearby: ${news.title}` }, 30); continue }
+          a.peakAud = Math.max(a.peakAud || a.startAud, value(a))
+          const sizeMul = (after ? 0.5 : 1) * (value(a) < a.peakAud * (1 - S.ddCut) ? 0.5 : 1)
           const dd = value(a) / (state.day.start[a.id] || a.startAud) - 1
           if (dd <= -(r.practice ? S.practiceLossLimit : S.dailyLossLimit)) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
-          enterDay(a, r, coin.base, p, sp, pos0, market, now, S, log)
+          enterDay(a, r, coin.base, p, sp, { ...pos0, sizeMul }, market, now, S, log)
         }
       }
     }
@@ -347,7 +358,7 @@ function enterDay(a, r, base, p, sp, pos0, market, now, S, log) {
   const cashUsd = a.cashAud / market.audPerUsd
   const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
   const invested = equity - cashUsd
-  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested)
+  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested) * (pos0.sizeMul ?? 1)
   if (a.positions.length >= (r.practice ? S.practiceMaxOpen : S.maxOpen) || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fill = p * (1 + spread / 2 + S.slippage)
   const units = alloc * (1 - a.fee) / fill

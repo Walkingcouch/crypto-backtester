@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes, Link, Navigate } from 'react-router-dom'
+import Brief from './pages/Brief'
 import Guide from './pages/Guide'
 import History from './pages/History'
 import Markets from './pages/Markets'
@@ -25,6 +26,7 @@ export default function App() {
             <span className="brand-name">Backtester</span>
           </Link>
           <nav className="nav">
+            <NavLink to="/today">Today</NavLink>
             <NavLink to="/markets">Markets</NavLink>
             <NavLink to="/predict">Predict</NavLink>
             <NavLink to="/picks">Picks</NavLink>
@@ -50,6 +52,7 @@ export default function App() {
       </header>
       <Routes>
         <Route path="/" element={<Navigate to="/markets" replace />} />
+        <Route path="/today" element={<Brief />} />
         <Route path="/guide" element={<Guide />} />
         <Route path="/history" element={<History />} />
         <Route path="/markets" element={<Markets />} />

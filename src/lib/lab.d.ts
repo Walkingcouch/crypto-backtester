@@ -2,12 +2,17 @@ export interface Stats { n: number; mean: number; se: number; t: number; win: nu
 export interface RuleSpec { kind: string; n?: number; k?: number; regime: string; H: number }
 export interface LabRule {
   v: number; id: string; spec: RuleSpec; text: string; status: 'champion' | 'challenger' | 'retired'
-  since: number; reason?: string; wasChampion?: boolean; practice?: boolean; explorer?: boolean; score?: number; vsIndex?: Stats; train: Stats; valid: Stats; all: Stats; pass: boolean
+  since: number; reason?: string; wasChampion?: boolean; practice?: boolean; explorer?: boolean; score?: number; rigor?: Rigor; vsIndex?: Stats; train: Stats; valid: Stats; all: Stats; pass: boolean
   live?: { trades: { t: number; base: string; g: number }[] }
+}
+export interface Rigor {
+  days: number; sharpe: number; meanNet: number; annual: number; maxDD: number; shuffleDD: number; randomP: number; randomMean: number
+  neighbours: { n: number; up: number }; dsr: number; trials: number; years: Record<string, { n: number; mean: number }>
+  checks: { random: boolean; doubleFee: boolean; neighbours: boolean; deflated: boolean }; passedAll: boolean
 }
 export interface Found { id: string; text: string; H: number; pass: boolean; train: Stats; valid: Stats; all: Stats }
 export interface Position { base: string; v: number; units: number; entryPx: number; fillPx: number; costUsd: number; t: number; stop: number; exitT: number; spread: number; est: number; cost: number; estimated?: boolean }
-export interface Closed extends Position { exitPx: number; net: number; gross: number; why: 'stop' | 'time' }
+export interface Closed extends Position { exitPx: number; net: number; gross: number; why: 'stop' | 'time'; rMult?: number | null; expected?: number | null }
 export interface Account {
   market?: string; perShareUsd?: number; minFeeUsd?: number; minFeeAud?: number; maxFeePct?: number
   id: string; owner: string; broker: string; exchange: string; fee: number; feeLabel: string; startAud: number

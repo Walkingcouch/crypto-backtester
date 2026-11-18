@@ -75,7 +75,7 @@ export function exploreScore(state, f, S) {
 
 export function exploreCoach(state, found, now, S, log) {
   const byId = new Map(found.map(f => [f.id, f]))
-  for (const r of state.rules) { const f = byId.get(r.id); if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass; r.norm = norms(f) } }
+  for (const r of state.rules) { const f = byId.get(r.id); if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass; r.rigor = f.rigor; r.norm = norms(f) } }
   state.bench ||= {}
   if (!state.liveBy) { state.liveBy = {}; for (const r of state.rules) for (const x of r.live?.trades || []) recordLive(state, r, x.t, x.base, x.g) }
   for (const [id, until] of Object.entries(state.bench)) if (until <= now) delete state.bench[id]
@@ -116,6 +116,7 @@ export function exploreCoach(state, found, now, S, log) {
     if (!r) { r = { v: state.nextV++, id: f.id, spec: f.spec, text: f.text, since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] } }; state.rules.push(r) }
     if (!prevActive.has(f.id)) r.since = now
     r.practice = true
+    r.rigor = f.rigor
     r.norm = norms(f)
     r.status = w.slot === 'champion' ? 'champion' : 'challenger'
     r.explorer = w.slot === 'explorer'

@@ -13,6 +13,7 @@
 //    Stops always execute, even at a loss.
 //  - Risk limits are fixed here and are never changed by the loop.
 
+import { assess, countTrials } from './rigor.js'
 import { btcContext, comboSignal, describeCombo } from './blocks.js'
 
 export const DAY = 86_400_000
@@ -27,7 +28,7 @@ export const LAB = {
   maxInvested: 0.6,      // at least 40% always in cash
   validDays: 180,        // last 180 days held back to check each rule
   refCost: 0.008,        // round-trip cost used when choosing rules (0.1% fee ×2, spread, slippage)
-  minTrain: 30, minTrainT: 2.0, minValid: 8,
+  minTrain: 30, minTrainT: 2.0, minValid: 30,    // was 8: too few held-back trades to mean anything
   maxChallengers: 3,
   promoteAfter: 12,      // closed live trades needed before a promotion / rollback
   promoteBy: 0.002,      // a challenger must beat the champion by 0.2% per trade
@@ -276,7 +277,7 @@ export function stats(ev, cost = 0) {
 }
 
 /** Test every rule: chosen on the older data (train), checked on the last `validDays` (valid). */
-export function discover(data, S = LAB) {
+export function discover(data, S = LAB, state) {
   const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
   const cut = last - S.validDays * DAY
   if (S.benchmarks) {                       // shares: judge every rule against the market index
@@ -284,7 +285,7 @@ export function discover(data, S = LAB) {
     for (const [m, b] of Object.entries(S.benchmarks)) data.bench[m] = data.coins.find(c => c.base === b)
   }
   const rules = S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])]
-  return rules.map(r => {
+  const found0 = rules.map(r => {
     const ev = events(r, data)
     const all = stats(ev)                       // gross, used by the cost gate
     // with a benchmark, the test is the return ABOVE the index over the same days, after costs
@@ -294,10 +295,14 @@ export function discover(data, S = LAB) {
     const train = stats(judged.filter(e => e.exitT < cut), cost)
     const valid = stats(judged.filter(e => e.t >= cut), cost)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
-    const out = { ...r, text: describe(r), train, valid, all, pass }
+    const out = { ...r, text: describe(r), train, valid, all, pass, ev }
     if (S.benchmarks) out.vsIndex = stats(ev.filter(e => Number.isFinite(e.ex)).map(e => ({ g: e.ex })))   // average beat of the index, before costs
     return out
-  }).sort((a, b) => (b.pass - a.pass) || b.train.t - a.train.t)
+  })
+  return assess(found0, data, {
+    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`,
+    netOf: S.benchmarks ? (e => (Number.isFinite(e.ex) ? e.ex - (S.refCostBy?.[e.m] ?? S.refCost) : NaN)) : (e => e.g - S.refCost),
+  })
 }
 
 /** Mark's gain estimate: average gain of all past signals minus one standard error (losers included). */
@@ -340,7 +345,7 @@ export function coach(state, found, now, S = LAB) {
   const byId = new Map(found.map(f => [f.id, f]))
   for (const r of state.rules) {           // refresh each rule's back-test
     const f = byId.get(r.id)
-    if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass; if (f.vsIndex) r.vsIndex = f.vsIndex }
+    if (f) { r.train = f.train; r.valid = f.valid; r.all = f.all; r.pass = f.pass; r.rigor = f.rigor; if (f.vsIndex) r.vsIndex = f.vsIndex }
   }
   const active = () => state.rules.filter(r => r.status !== 'retired')
   let champ = state.rules.find(r => r.status === 'champion')
@@ -357,7 +362,7 @@ export function coach(state, found, now, S = LAB) {
     if (!f.pass || state.rules.some(r => r.id === f.id && r.status !== 'retired')) continue
     if (active().filter(r => r.status === 'challenger').length >= S.maxChallengers) break
     const r = { v: state.nextV++, id: f.id, spec: f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H, ...(f.mkt ? { mkt: f.mkt } : {}) }, text: f.text,
-      status: champ ? 'challenger' : 'champion', since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, live: { trades: [] }, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }
+      status: champ ? 'challenger' : 'champion', since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, rigor: f.rigor, live: { trades: [] }, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }
     state.rules.push(r)
     if (!champ) { champ = r; r.reason = 'best rule on the back-test'; log('promote', `v${r.v} is the first trading rule: ${r.text} (past signals ${pct(f.all.mean)} a trade before costs, ${f.all.n} trades).`) }
     else log('challenger', `v${r.v} added to test on paper: ${r.text}`)
@@ -442,7 +447,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
       a.cashAud += proceeds * rate
       a.positions.splice(a.positions.indexOf(pos), 1)
       a.stats.n++; a.stats.sumNet += net; if (net > 0) a.stats.wins++
-      push(a.closed, { ...pos, exitT: now, exitPx: p, net, gross: p / pos.entryPx - 1, why: stopped ? 'stop' : 'time' }, 200)
+      push(a.closed, { ...pos, rMult: pos.stop && pos.entryPx ? +(net / (1 - pos.stop / pos.entryPx)).toFixed(2) : null, expected: ruleByV.get(pos.v)?.norm?.[pos.base]?.m ?? ruleByV.get(pos.v)?.all?.mean ?? null, exitT: now, exitPx: p, net, gross: p / pos.entryPx - 1, why: stopped ? 'stop' : 'time' }, 200)
       log('trade', `${a.owner}: sold ${pos.base} (${stopped ? 'stop-loss' : 'time up'}) ${pct(net)} after costs.`)
     }
   }
@@ -453,7 +458,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules) {
     const found = (opts.discover || discover)(data, S, state, now)
     coach(state, found, now, S)
-    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }))
+    state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all, rigor: f.rigor, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
   }

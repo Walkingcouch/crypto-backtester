@@ -46,7 +46,7 @@ export const STOCK = {
   benchmarks: { US: 'SPY', ASX: 'STW.AX' },   // every rule is judged on beating the index over the same days
   refCostBy: { US: 0.002, ASX: 0.005 },   // realistic round trips: US large caps vs ASX (min fee, wider spread)
   minTrainT: 3,           // higher bar because many rules are tried (Harvey, Liu & Zhu 2016)
-  minTrain: 60, minValid: 15,
+  minTrain: 60, minValid: 30,
 }
 
 // The idea factory (explorer.js) on the same shares and accounts. "Bitcoin's trend" becomes the
