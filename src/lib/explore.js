@@ -108,7 +108,7 @@ export function exploreCoach(state, found, now, S, log) {
 
   const prevActive = new Set(active.map(r => r.id))
   for (const r of active) {
-    if (!want.some(w => w.f.id === r.id)) { r.status = 'retired'; r.reason = `had its ${S.minHoldDays}-day run; replaced by a stronger or untried idea`; log('retire', `v${r.v} (learning) stepped aside: ${r.reason}.`) }
+    if (!want.some(w => w.f.id === r.id)) { r.status = 'retired'; r.reason = now - (r.since || now) >= S.minHoldDays * DAY ? `had its ${S.minHoldDays}-day run; replaced by a stronger or untried idea` : 'made way for a different family of idea'; log('retire', `v${r.v} (learning) stepped aside: ${r.reason}.`) }
   }
   for (const w of want) {
     const f = w.f
