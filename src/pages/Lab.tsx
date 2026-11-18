@@ -400,7 +400,7 @@ function RigorBox({ g }: { g: Rigor }) {
             <span className="muted"> · {k === 'random' ? `random runs beat it ${pct0(g.randomP)} of the time` : k === 'doubleFee' ? `${pct(g.meanNet)} a trade after one set of costs` : k === 'neighbours' ? `${g.neighbours.up} of ${g.neighbours.n} other settings make money` : `${pct0(g.dsr)} after ${g.trials.toLocaleString()} rules tried`}</span></li>
         ))}
       </ul>
-      <div className="muted">Daily Sharpe {g.sharpe.toFixed(2)} over {g.days.toLocaleString()} days · at 10% of the account per trade: {pct(g.annual)} a year, worst fall {pct0(g.maxDD)}, worst fall in 95% of shuffled orders {pct0(g.shuffleDD)}</div>
+      <div className="muted">Daily Sharpe {g.sharpe.toFixed(2)} over {g.days.toLocaleString()} days · spread across its open trades: {pct(g.annual)} a year, worst fall {pct0(g.maxDD)} · worst fall in 95% of shuffled trade orders at 10% a trade: {pct0(g.shuffleDD)}</div>
       {years.length > 0 && <div className="muted">By year (a trade, after costs): {years.map(([y, o]) => <span key={y} className={cls(o.mean)}>{y} {pct(o.mean)} ({o.n}) </span>)}</div>}
     </div>
   )

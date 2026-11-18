@@ -1,9 +1,10 @@
 // Professional checks every rule must survive before it can trade as "proven" (learning mode still
 // paper-trades rules that fail them). Shared by all six labs.
 //
-//  1. Daily portfolio scoring: trades are grouped by the day they close, so ten coins that all fell
-//     with Bitcoin on the same day count as one bad day, not ten independent results. Sharpe,
-//     annual return and drawdown come from that daily series.
+//  1. Daily portfolio scoring: each trade is spread over the days it was held and every day is the
+//     average of the trades open that day, so ten coins that all fell with Bitcoin on the same day
+//     count as one bad day, not ten independent results. Sharpe, annual return and worst fall come
+//     from that daily series (an account spread evenly across the rule's open trades).
 //  2. Random-entry baseline: the same number of trades, on the same coins, held for the same
 //     lengths, but entered at random times. A rule must beat 95% of 200 random runs, otherwise its
 //     "edge" is just the market's drift.
@@ -55,14 +56,25 @@ const moments = x => {
   return { n, mean, sd, skew: m2 > 0 ? m3 / m2 ** 1.5 : 0, kurt: m2 > 0 ? m4 / (m2 * m2) : 3 }
 }
 
-/** Daily series: each day = average net result of trades closing that day; 0 on days with none. */
+/**
+ * Daily portfolio series: each trade's result is spread evenly over the days it was held (as a log
+ * return), and each day's return is the average over the trades open that day: an account spread
+ * evenly across the rule's open trades. Days with nothing open are 0. Same-day trades on coins that
+ * move together are therefore one day's result, not many independent ones.
+ */
 export function dailySeries(net) {
   if (!net.length) return []
-  const by = new Map()
-  for (const { exitT, r } of net) { const d = Math.floor(exitT / DAY); const x = by.get(d) || [0, 0]; x[0] += r; x[1]++; by.set(d, x) }
-  const days = [...by.keys()].sort((a, b) => a - b)
+  const sum = new Map(), cnt = new Map()
+  let lo = Infinity, hi = -Infinity
+  for (const { t, exitT, r } of net) {
+    if (!(r > -1)) continue
+    const a = Math.floor(t / DAY), b = Math.max(a, Math.floor((exitT - 1) / DAY))
+    const per = Math.log(1 + r) / (b - a + 1)
+    for (let d = a; d <= b; d++) { sum.set(d, (sum.get(d) || 0) + per); cnt.set(d, (cnt.get(d) || 0) + 1) }
+    lo = Math.min(lo, a); hi = Math.max(hi, b)
+  }
   const out = []
-  for (let d = days[0]; d <= days[days.length - 1]; d++) { const x = by.get(d); out.push(x ? x[0] / x[1] : 0) }
+  for (let d = lo; d <= hi; d++) out.push(cnt.get(d) ? Math.expm1(sum.get(d) / cnt.get(d)) : 0)
   return out
 }
 
@@ -158,7 +170,7 @@ export function assess(found, data, opts) {
     const D = f._daily, net = f._net
     // equity curve of the daily series for drawdown and annual return
     let eq = 1, peak = 1, maxDD = 0
-    for (const r of D.series) { eq *= 1 + 0.1 * r; if (eq > peak) peak = eq; maxDD = Math.max(maxDD, 1 - eq / peak) }
+    for (const r of D.series) { eq *= 1 + r; if (eq > peak) peak = eq; maxDD = Math.max(maxDD, 1 - eq / peak) }
     const years = {}
     for (const x of net) { const y = new Date(x.t).getUTCFullYear(); const o = (years[y] ||= { n: 0, sum: 0 }); o.n++; o.sum += x.r }
     for (const y of Object.keys(years)) { years[y].mean = +(years[y].sum / years[y].n).toFixed(5); delete years[y].sum }
@@ -175,7 +187,7 @@ export function assess(found, data, opts) {
     }
     f.rigor = {
       days: D.T, sharpe: +(D.sr * Math.sqrt(365)).toFixed(2), meanNet: +m.toFixed(5),
-      annual: +((Math.pow(1 + 0.1 * D.mean, 365) - 1)).toFixed(4), maxDD: +maxDD.toFixed(4),
+      annual: +(Math.pow(eq, 365 / Math.max(1, D.T)) - 1).toFixed(4), maxDD: +maxDD.toFixed(4),
       shuffleDD: +shuffleDrawdown(net.map(x => x.r)).toFixed(4),
       randomP: +rb.p.toFixed(3), randomMean: +rb.randomMean.toFixed(5),
       neighbours: { n: sibs.length, up: sibsUp }, dsr: +dsr.toFixed(3), trials, years, checks,

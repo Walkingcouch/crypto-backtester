@@ -80,7 +80,7 @@ export function sharesHandler(opts) {
       let saved = null
       try { const r = await sb(`/rest/v1/lab_state?id=eq.${opts.sid}&select=data`); if (r.ok) saved = (await r.json())[0]?.data ?? null } catch { /* fresh */ }
       const now = Date.now()
-      const want = opts.bars ? opts.bars(saved, now) : { range: '5y', interval: '1d' }
+      const want = opts.bars ? opts.bars(saved, now) : { range: '10y', interval: '1d' }   // 10 years: includes the 2020 crash and the 2022 bear market
       const rate = await audPerUsd()
       const coins = [], errors = []
       for (let i = 0; i < opts.list.length; i += 8) {
