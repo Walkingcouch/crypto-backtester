@@ -85,7 +85,7 @@ export function rateStreams(events, prices, { now = Date.now(), sims = 200 } = {
       let missing = 0, lagSum = 0, lagN = 0
       for (const e of evs) {
         const P = prices[priceKey(e.market, e.ticker)], B = e.ticker === 'MARKET' ? null : prices[benchKey(e.market)]
-        if (!P) { missing++; continue }
+        if (!P) { missing++; if ((rows.missingKeys ||= []).length < 8 && !rows.missingKeys.includes(priceKey(e.market, e.ticker))) rows.missingKeys.push(priceKey(e.market, e.ticker)); continue }
         const i = nextBar(P, e.t)
         const r = legReturn(P, i, h), rb = P === B ? 0 : benchReturn(B, P, i, h)
         if (!Number.isFinite(r) || !Number.isFinite(rb)) continue

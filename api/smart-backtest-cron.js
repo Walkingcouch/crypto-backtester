@@ -56,7 +56,7 @@ export default async function handler(req, res) {
     const state = {
       ...result, lagDays, events: events.length, byCategory: byCat,
       oldest: events.length ? Math.min(...events.map(e => e.t)) : null,
-      prices: Object.keys(prices).length, priceMissing: failed.slice(0, 40), priceMissingCount: failed.length, archived: archive.length, ms: Date.now() - t0,
+      prices: Object.keys(prices).length, wanted: want.length, distinctAssets: count.size, priceMissing: failed.slice(0, 40), priceMissingCount: failed.length, archived: archive.length, ms: Date.now() - t0,
     }
     if (!dry) {
       await rpc('lab_put', { sid: 'signals-archive', payload: { rows: archive, updated: Date.now() } })
