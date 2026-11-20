@@ -8,7 +8,7 @@ import { yahooBars } from './_lib/sharesrun.js'
 import { bars as binanceBars } from './_lib/labrun.js'
 import { archiveRow, benchKey, buildEvents, priceKey, rateStreams } from './_lib/signals/backtest.js'
 
-const MAX_TICKERS = 450
+const MAX_TICKERS = 1200
 const load = async id => { const r = await sb(`/rest/v1/lab_state?id=eq.${id}&select=data`); return r.ok ? (await r.json())[0]?.data ?? null : null }
 
 export default async function handler(req, res) {
@@ -32,7 +32,9 @@ export default async function handler(req, res) {
     const { events, lagDays } = buildEvents({ signals, ledger: sig?.ledger, archive })
     const count = new Map()
     for (const e of events) { const pk = priceKey(e.market, e.ticker); count.set(pk, (count.get(pk) || 0) + 1) }
-    const want = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_TICKERS).map(([pk]) => pk)
+    // smaller streams first (each of their shares matters), then the busiest politician shares
+    const small = new Set(events.filter(e => e.cat !== 'politician_us').map(e => priceKey(e.market, e.ticker)))
+    const want = [...count.entries()].sort((a, b) => (small.has(b[0]) - small.has(a[0])) || b[1] - a[1]).slice(0, MAX_TICKERS).map(([pk]) => pk)
     for (const m of ['US', 'ASX', 'CRYPTO']) if (!want.includes(benchKey(m))) want.push(benchKey(m))
     const prices = {}, failed = []
     for (let i = 0; i < want.length; i += 10) {
