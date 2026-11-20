@@ -5,6 +5,7 @@ import CoinTable, { cls, MarketNotes, pctTxt } from '../components/CoinTable'
 import { Info } from '../components/Info'
 import WhereToBuy from '../components/WhereToBuy'
 import SmartMoney from '../components/SmartMoney'
+import SignalReport from '../components/SignalReport'
 import { PERIODS, pricePath, type Period } from '../lib/markets'
 import { rateAtSmooth } from '../lib/currency'
 import { useCoinMarket } from '../lib/useCoinMarket'
@@ -64,6 +65,7 @@ export default function Markets() {
   if (view === 'flow') return (
     <main className="page narrow">
       <div className="page-head"><h1>Markets</h1>{tabs}</div>
+      <SignalReport />
       <SmartMoney />
     </main>
   )

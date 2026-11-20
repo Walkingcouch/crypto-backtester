@@ -38,6 +38,9 @@
     },
     "api/signals-cron.js": {
       "maxDuration": 300
+    },
+    "api/smart-backtest-cron.js": {
+      "maxDuration": 300
     }
   },
   "headers": [
@@ -95,6 +98,10 @@
     {
       "path": "/api/signals-cron",
       "schedule": "10,40 * * * *"
+    },
+    {
+      "path": "/api/smart-backtest-cron",
+      "schedule": "20 19 * * *"
     }
   ]
 }

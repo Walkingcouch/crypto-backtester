@@ -78,7 +78,7 @@ export async function backfillLedger(ledger, signals, { pdfText, maxHouse = 10, 
   ledger.houseDocs = ledger.houseDocs.slice(-4000); ledger.senateLinks = ledger.senateLinks.slice(-2000)
   return notes
 }
-const slim = t => ({ entity_name: t.entity_name, asset_ticker: t.asset_ticker, action: t.action, trade_date: t.trade_date, trade_size_usd: t.trade_size_usd, trade_size_range: t.trade_size_range, partial: t.partial || false })
+const slim = t => ({ entity_name: t.entity_name, asset_ticker: t.asset_ticker, action: t.action, trade_date: t.trade_date, disclosed_at: t.disclosed_at || null, trade_size_usd: t.trade_size_usd, trade_size_range: t.trade_size_range, partial: t.partial || false })
 
 /** Attach order details to every politician trade (prices fetched once per ticker per run). */
 export async function enrichOrders(signals, ledger, { maxTickers = 160 } = {}) {
