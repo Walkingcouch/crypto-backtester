@@ -282,7 +282,7 @@ export function stepDay(state, market, now, S = DT) {
 
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 4)
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 5)
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
     const SL = withLiveCost(state, market, S)          // choose and check at CoinSpot's real round trip
     const found = discoverDay(data, SL, state)

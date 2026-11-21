@@ -433,7 +433,7 @@ function RigorBox({ g, now }: { g: Rigor; now?: { trend: 'up' | 'mixed' | 'down'
   const examPending = g.examRequired && g.checks.sealed === undefined
   return (
     <div className="explain-box small" style={{ marginTop: 8 }}>
-      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{(g.v ?? 0) < 4 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}{examPending && <span className="muted"> · the sealed exam is only sat once everything else passes</span>}</div>
+      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{(g.v ?? 0) < 5 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}{examPending && <span className="muted"> · the sealed exam is only sat once everything else passes</span>}</div>
       <ul className="lab-events" style={{ margin: '6px 0' }}>
         {keys.map(k => (
           <li key={k}>{g.checks[k] ? '✓' : '✗'} {CHECK_TEXT[k][0]} <Info>{CHECK_TEXT[k][1]}</Info>

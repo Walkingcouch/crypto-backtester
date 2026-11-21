@@ -65,7 +65,7 @@ test('rules are chosen at the live exchange\'s real round trip, and each exchang
   assert.ok(v.binance.cost < 0.005)
   const state = { accounts }
   const S2 = withLiveCost(state, market, { refCost: 0.003, slippage: 0.0005 })
-  assert.equal(S2.refCost, v.john.cost); assert.equal(state.selectCost.exchange, 'CoinSpot')
+  assert.equal(S2.refCost, v.binance.cost); assert.equal(state.selectCost.exchange, 'Binance')
 })
 
 import { EXITS, ruleId, describe as describeRule } from '../src/lib/lab.js'

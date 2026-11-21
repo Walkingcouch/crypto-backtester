@@ -340,8 +340,11 @@ export function venueCosts(accounts, market, S) {
   }
   return out
 }
-/** Rules are chosen and checked at the cost of the exchange that trades real money (CoinSpot). */
-export const LIVE_ACCOUNT = 'john'
+/** Rules are chosen and checked at the real cost of the exchange real money is meant to trade on:
+ *  Binance (about 0.4% a round trip) since 22 Nov 2026. The CoinSpot paper account and the live
+ *  CoinSpot bot still pay CoinSpot's own cost: its cost gate and the bot's cost check block any trade
+ *  that doesn't expect to beat about 3.2%. */
+export const LIVE_ACCOUNT = 'binance'
 export function withLiveCost(state, market, S) {
   const v = venueCosts(state.accounts, market, S)
   state.venueCosts = v
@@ -513,7 +516,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   // rule list changed (new rules added): re-test now rather than at the weekly re-test
   const ruleList = opts.discover ? null : () => (S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])])
   const newRules = !!ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 4)     // tested before the professional checks existed
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 5)     // tested before the professional checks existed
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules || unchecked) {
     const found = (opts.discover || discover)(data, withLiveCost(state, market, S), state, now)
     coach(state, found, now, S)
