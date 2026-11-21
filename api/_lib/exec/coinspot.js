@@ -75,12 +75,17 @@ export class CoinSpotAdapter {
   }
 
   /** AUD per coin to buy or sell `audAmount` worth now. */
-  async getQuote(coin, side, audAmount) {
+  /** refAud: optional AUD reference price (Binance × AUD rate). In paper mode it stands in for coins
+   *  CoinSpot sells but leaves out of its public price feed (HYPE, BNB, ZEC…), with the same
+   *  1% buy–sell gap the labs assume for those coins. */
+  async getQuote(coin, side, audAmount, refAud) {
     if (this.mode === 'paper') {
-      const p = await this.publicPrice(coin)
+      let p = {}
+      try { p = await this.publicPrice(coin) } catch { /* fall back below */ }
       const rate = side === 'BUY' ? p.ask : p.bid
-      if (!(rate > 0)) throw new Error(`no CoinSpot price for ${coin}`)
-      return { rate, source: 'public' }
+      if (rate > 0) return { rate, source: 'public' }
+      if (refAud > 0) return { rate: +(refAud * (side === 'BUY' ? 1.005 : 0.995)).toPrecision(10), source: 'estimated' }
+      throw new Error(`no CoinSpot price for ${coin}`)
     }
     const j = await this.post(side === 'BUY' ? '/api/v2/quote/buy/now' : '/api/v2/quote/sell/now', { cointype: coin, amount: audAmount, amounttype: 'aud' })
     return { rate: +j.rate, source: 'quote', raw: j }

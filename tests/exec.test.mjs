@@ -78,6 +78,13 @@ test('paper mode never calls private endpoints', async () => {
   assert.equal(q.rate, 101); assert.equal(f.status, 'paper_filled')
   assert.ok(urls.every(u => u.includes('/pubapi/')))
 })
+test('paper quote falls back to the reference price when CoinSpot\'s feed lacks the coin', async () => {
+  const a = new CoinSpotAdapter({ mode: 'paper', fetch: async () => ({ json: async () => ({ status: 'error', prices: {} }) }) })
+  const q = await a.getQuote('HYPE', 'BUY', 25, 100)
+  assert.equal(q.source, 'estimated'); assert.equal(q.rate, 100.5)
+  assert.equal((await a.getQuote('HYPE', 'SELL', 25, 100)).rate, 99.5)
+  await assert.rejects(() => a.getQuote('HYPE', 'BUY', 25), /no CoinSpot price/)
+})
 test('exchange error status is surfaced, not treated as a fill', async () => {
   const a = new CoinSpotAdapter({ mode: 'live', key: 'k', secret: 's', fetch: async () => ({ status: 200, text: async () => '{"status":"error","message":"Insufficient funds"}' }) })
   await assert.rejects(() => a.placeOrder({ coin: 'BTC', side: 'BUY', aud: 25, rate: 100, thresholdPct: 1 }), /Insufficient funds/)

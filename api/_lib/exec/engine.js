@@ -28,7 +28,8 @@ export function paperWallet(orders, startAud) {
 
 /**
  * deps: { mode, settings, store: { orders, put(row, allowUpdate) → 'inserted'|'updated'|'duplicate' },
- *         crypto: adapter, shares: adapter, cryptoLab: lab state, shareLab: lab state, now, paperStartAud }
+ *         crypto: adapter, shares: adapter, cryptoLab: lab state, shareLab: lab state, now, paperStartAud,
+ *         refPrice: optional base → live USD price, used for paper quotes CoinSpot's public feed lacks }
  */
 export async function runExecution(deps) {
   const { mode, settings: S, store, crypto, shares, now = Date.now() } = deps
@@ -50,6 +51,7 @@ export async function runExecution(deps) {
   if (acct) {
     const rate = lab.audPerUsd || 1.5
     const ruleOf = v => (lab.rules || []).find(r => r.v === v)
+    const ref = async base => { try { return deps.refPrice ? +(await deps.refPrice(base)) * rate : null } catch { return null } }
     let wallet = null
     const getWallet = async () => (wallet ||= await crypto.getWalletBalance(mode === 'paper' ? paperWallet(orders, deps.paperStartAud ?? 1000) : undefined))
     // exits first: sell what the bot bought for positions the lab has closed
@@ -66,7 +68,7 @@ export async function runExecution(deps) {
       const row = { idem_key: key, mode, venue: 'coinspot', source: buy.source, side: 'SELL', asset: base, market: 'CRYPTO', requested_amount: amount, requested_aud: null, signal_price: closed ? +(closed.exitPx * rate).toFixed(6) : null, parent_idem: buy.idem_key, status: 'intent' }
       if (!prev) await save(row); else await save({ ...row, status: 'intent', reason: null }, true)
       let quote = null
-      try { quote = await crypto.getQuote(base, 'SELL', amount * (closed?.exitPx || 0) * rate) } catch (e) { quote = { error: String(e.message || e) } }
+      try { quote = await crypto.getQuote(base, 'SELL', amount * (closed?.exitPx || 0) * rate, await ref(base)) } catch (e) { quote = { error: String(e.message || e) } }
       // a sell is never blocked for being "stale" or unproven, and retries every run until it goes through
       const check = validateOrder({ side: 'SELL', aud: Math.max(0.01, amount * (quote.rate || 0)), signalPrice: null }, { mode, settings: S, now, quoteRate: quote.rate })
       if (!check.ok || !(amount > 0) || quote.error) {
@@ -93,7 +95,7 @@ export async function runExecution(deps) {
       const row = { idem_key: key, mode, venue: 'coinspot', source: `${labId}/${acctId} v${p.v}${r ? ` ${r.id}` : ''}${proven ? '' : ' (unproven)'}`, side: 'BUY', asset: p.base, market: 'CRYPTO', requested_aud: audAmt, signal_price: signalPrice, status: 'intent' }
       if ((await save(row)) === 'duplicate') { log.push(`BUY ${p.base} duplicate suppressed`); continue }
       let quote = {}, w = null
-      try { [quote, w] = await Promise.all([crypto.getQuote(p.base, 'BUY', audAmt), getWallet()]) } catch (e) { quote = { error: String(e.message || e) } }
+      try { [quote, w] = await Promise.all([crypto.getQuote(p.base, 'BUY', audAmt, await ref(p.base)), getWallet()]) } catch (e) { quote = { error: String(e.message || e) } }
       const check = quote.error ? { ok: false, reason: `quote or balance failed: ${quote.error}` }
         : validateOrder({ side: 'BUY', aud: audAmt, signalPrice, signalAt: p.t }, { mode, settings: S, now, spent24h: spent24h(orders, mode, now), walletAud: w?.aud, quoteRate: quote.rate, proven })
       if (!check.ok) { await save({ idem_key: key, status: 'rejected', reason: check.reason, quote_rate: quote.rate || null }, true); log.push(`BUY ${p.base} rejected: ${check.reason}`); continue }
