@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { portfolioReplay, allTrials, HUMAN_TRIALS } from '../src/lib/rigor.js'
-import { preSeal, sitExam, SEAL } from '../src/lib/exam.js'
+import { preSeal, sitExam, currentSeal, halfYear } from '../src/lib/exam.js'
 
 const DAY = 86_400_000, T0 = Date.UTC(2024, 0, 1)
 
@@ -20,14 +20,28 @@ test('portfolio replay: one position per coin, slots free up when trades end', (
   const p = portfolioReplay(ev, e => e.g, { maxOpen: 3, slot: 0.5 })
   assert.equal(p.taken, 2)
 })
-test('choosing never sees the sealed window; the exam is sat once and kept', () => {
-  const ev = [{ t: SEAL.start - 10 * DAY, exitT: SEAL.start - 5 * DAY, g: 0.01 }, { t: SEAL.start - DAY, exitT: SEAL.start + DAY, g: 0.5 }, ...Array.from({ length: 12 }, (_, i) => ({ t: SEAL.start + i * DAY, exitT: SEAL.start + (i + 2) * DAY, g: 0.02 }))]
-  assert.equal(preSeal(ev).length, 1)                          // a trade still open at the seal is excluded too
+test('choosing never sees the sealed half-year; the exam is sat once per half-year and kept', () => {
+  const now = Date.UTC(2026, 10, 22), seal = currentSeal(now)
+  assert.equal(seal.id, '2026H2'); assert.equal(seal.start, Date.UTC(2026, 6, 1))
+  const ev = [{ t: seal.start - 10 * DAY, exitT: seal.start - 5 * DAY, g: 0.01 }, { t: seal.start - DAY, exitT: seal.start + DAY, g: 0.5 }, ...Array.from({ length: 12 }, (_, i) => ({ t: seal.start + i * DAY, exitT: seal.start + (i + 2) * DAY, g: 0.02 }))]
+  assert.equal(preSeal(ev, seal).length, 1)                    // a trade still open at the seal is excluded too
   const state = {}
-  const a = sitExam(state, 'r1', ev, e => e.g - 0.003, 1)
+  const a = sitExam(state, 'r1', ev, e => e.g - 0.003, now, seal)
   assert.equal(a.n, 12); assert.equal(a.passed, true)
-  const b = sitExam(state, 'r1', ev.map(e => ({ ...e, g: -1 })), e => e.g, 2)   // later data can't change it
-  assert.equal(b.at, 1); assert.equal(b.passed, true)
+  const b = sitExam(state, 'r1', ev.map(e => ({ ...e, g: -1 })), e => e.g, now + DAY, seal)   // later data can't change it
+  assert.equal(b.at, now); assert.equal(b.passed, true)
+})
+test('a new half-year unseals the old one; its own exam opens after three months, until then the old result counts', () => {
+  const state = { exams: { '2026H2|r1': { n: 20, mean: 0.01, passed: true, at: 1 } } }
+  const jan = Date.UTC(2027, 0, 10), s = currentSeal(jan)
+  assert.equal(s.id, '2027H1'); assert.equal(s.prev.id, '2026H2')
+  const carried = sitExam(state, 'r1', [], e => e.g, jan, s)
+  assert.equal(carried.passed, true); assert.equal(carried.carried, true)
+  assert.equal(state.exams['2027H1|r1'], undefined)               // not sat early
+  const apr = Date.UTC(2027, 3, 15), s2 = currentSeal(apr)
+  const fresh = sitExam(state, 'r1', [{ t: Date.UTC(2027, 1, 1), exitT: Date.UTC(2027, 1, 5), g: -0.05 }], e => e.g, apr, s2)
+  assert.equal(fresh.half, '2027H1'); assert.equal(fresh.passed, false)
+  assert.equal(halfYear(Date.UTC(2027, 6, 1)).id, '2027H2')
 })
 test('luck is counted across every lab plus the hand-made ideas', () => {
   assert.equal(allTrials({ trialsOthers: 1000 }, 58), 1058 + HUMAN_TRIALS)
@@ -94,4 +108,13 @@ test('every exit style is its own rule with its own id and wording', () => {
   assert.equal(new Set(ids).size, EXITS.length)
   assert.match(describeRule({ kind: 'breakout', n: 20, regime: 'any', H: 10, exit: { k: 'trail', m: 3 } }), /Trailing stop/)
   assert.match(describeRule({ kind: 'dip', k: 1.5, regime: 'any', H: 5, exit: { k: 'tp', r: 2 } }), /Takes profit at 2×/)
+})
+
+import { effectiveCount } from '../src/lib/rigor.js'
+test('near-copies count once in the luck check; genuinely different ideas count separately', () => {
+  let sd = 9; const R = () => (sd = (sd * 16807) % 2147483647) / 2147483647 - 0.5
+  const mk = base => { const x = base.map(v => v + R() * 0.001); x.start = 100; return x }
+  const a = Array.from({ length: 200 }, () => R() * 0.02), b = Array.from({ length: 200 }, () => R() * 0.02)
+  const copiesOfA = [mk(a), mk(a), mk(a)], copiesOfB = [mk(b), mk(b)]
+  assert.equal(effectiveCount([...copiesOfA, ...copiesOfB]), 2)
 })

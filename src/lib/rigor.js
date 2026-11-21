@@ -31,10 +31,10 @@
 //  - shares must also beat their market index over the same days by more than costs
 
 import { regimeProfile } from './regime.js'
-import { sitExam } from './exam.js'
+import { lastExam, sitExam } from './exam.js'
 
 /** Bumped whenever the checks change, so results made under older checks are re-made. */
-export const RIGOR_V = 5
+export const RIGOR_V = 6
 
 const DAY = 86_400_000
 const GAMMA = 0.5772156649
@@ -116,7 +116,32 @@ export function dailySeries(net, data, exitOffset = 0) {
   }
   const out = []
   for (let d = lo; d <= hi; d++) out.push(cnt.get(d) ? Math.expm1(sum.get(d) / cnt.get(d)) : 0)
+  out.start = lo                                   // first day number, so series of different rules can be lined up
   return out
+}
+
+/**
+ * Effective number of independent ideas among rules tested together. Near-copies (the same rule
+ * with a different exit, hold or filter) make almost the same daily results, so counting them all
+ * as separate tries over-states how much luck there was to find. Rules are grouped greedily, best
+ * Sharpe first: a rule whose daily results correlate 0.6 or more with a group's first rule joins
+ * that group (López de Prado's "effective number of trials"). Returns the number of groups.
+ */
+export function effectiveCount(series, minCorr = 0.6) {
+  const S = series.filter(x => x && x.length > 30)
+  const reps = []
+  for (const x of S) {
+    if (!reps.some(r => corr(r, x) >= minCorr)) reps.push(x)
+  }
+  return Math.max(1, reps.length + (series.length - S.length))
+}
+function corr(a, b) {
+  const lo = Math.max(a.start, b.start), hi = Math.min(a.start + a.length, b.start + b.length)
+  if (hi - lo < 30) return 0
+  let sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0, n = 0
+  for (let d = lo; d < hi; d++) { const x = a[d - a.start], y = b[d - b.start]; sa += x; sb += y; saa += x * x; sbb += y * y; sab += x * y; n++ }
+  const va = saa / n - (sa / n) ** 2, vb = sbb / n - (sb / n) ** 2
+  return va > 0 && vb > 0 ? (sab / n - (sa / n) * (sb / n)) / Math.sqrt(va * vb) : 0
 }
 
 /** Deflated Sharpe ratio: P(true Sharpe > 0) after the best of `trials` tries, with per-period SR. */
@@ -232,6 +257,15 @@ export function assess(found, data, opts) {
   }
   const srs = found.filter(f => f._daily.T > 30).map(f => f._daily.sr)
   const srVar = moments(srs).sd ** 2
+  // luck counted by groups of genuinely different ideas, across every lab (see effectiveCount)
+  let N = trials
+  if (opts.state && found.length > 1) {
+    const groups = effectiveCount([...found].sort((a, b) => b._daily.sr - a._daily.sr).map(f => f._daily.series))
+    const raw = Math.max(opts.state.trials || 0, found.length)
+    opts.state.trialsEff = Math.max(groups, Math.round(raw * groups / found.length))
+    opts.state.trialsGroups = { groups, rules: found.length }
+    N = allTrials(opts.state, opts.state.trialsEff)
+  }
   for (const f of found) { f._n = f._net.length; f._m = f._n ? f._net.reduce((a, x) => a + x.r, 0) / f._n : 0 }
   const meanNet = f => f._m
   for (const f of found) {
@@ -246,7 +280,7 @@ export function assess(found, data, opts) {
     const fam = family(f), sibs = found.filter(o => o !== f && family(o) === fam && o._n >= 30)
     const sibsUp = sibs.filter(o => meanNet(o) > 0).length
     const m = meanNet(f)
-    const dsr = deflatedSharpe(D.sr, D.T, D.skew, D.kurt, trials, srVar)
+    const dsr = deflatedSharpe(D.sr, D.T, D.skew, D.kurt, N, srVar)
     const evs = f.ev || []
     const grossMean = evs.length ? evs.reduce((a, e) => a + e.g, 0) / evs.length : 0
     const edgeVsRandom = grossMean - rb.randomMean
@@ -265,14 +299,14 @@ export function assess(found, data, opts) {
     if (pf) checks.portfolio = pf.total > 0 && pf.taken >= 20
     // the sealed exam: only for rules that passed everything else; sat once and kept
     let ex = null
-    if (exam && f.evAll && Object.values(checks).every(Boolean) && f.pass) { ex = sitExam(exam.state, f.id, f.evAll, netOf, exam.now); checks.sealed = ex.passed }
-    else if (exam?.state?.exams?.[f.id]) { ex = exam.state.exams[f.id]; checks.sealed = ex.passed }
+    if (exam && f.evAll && Object.values(checks).every(Boolean) && f.pass) { ex = sitExam(exam.state, f.id, f.evAll, netOf, exam.now); if (ex) checks.sealed = ex.passed }
+    else if (exam) { ex = lastExam(exam.state, f.id, exam.now); if (ex) checks.sealed = ex.passed }
     f.rigor = {
       v: RIGOR_V, days: D.T, sharpe: +(D.sr * Math.sqrt(365)).toFixed(2), meanNet: +m.toFixed(5),
       annual: +(Math.pow(eq, 365 / Math.max(1, D.T)) - 1).toFixed(4), maxDD: +maxDD.toFixed(4),
       shuffleDD: +shuffleDrawdown(net.map(x => x.r)).toFixed(4),
       randomP: +rb.p.toFixed(3), randomMean: +rb.randomMean.toFixed(5),
-      neighbours: { n: sibs.length, up: sibsUp }, dsr: +dsr.toFixed(3), trials, years, checks,
+      neighbours: { n: sibs.length, up: sibsUp }, dsr: +dsr.toFixed(3), trials: N, trialsRaw: trials, years, checks,
       ...(pf ? { portfolio: pf } : {}), ...(ex ? { exam: ex } : {}), examRequired: !!exam,
       edgeVsRandom: +edgeVsRandom.toFixed(5), ...(idx != null ? { vsIndex: +idx.toFixed(5) } : {}),
       regime: regimeProfile(f.ev || [], data, e => netOf(e)),

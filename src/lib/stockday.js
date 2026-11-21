@@ -201,7 +201,7 @@ export function discoverStockDay(data, S = SDT, state) {
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
     return { ...r, spec: { kind: r.kind, n: r.n, g: r.g, K: r.K, k: r.k, last: r.last, H: r.H, tf: r.tf }, text: describeStockDay(r), train, valid, all, pass, ev, evAll }
   })
-  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 150, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null })
+  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 150, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null, state })
 }
 
 /** Walk-forward: each month pick the best rule on the previous 120 days only, record the next 30. */
@@ -298,7 +298,7 @@ export function stepStockDay(state, market, now, S = SDT) {
 
   // 1. daily re-test + walk-forward (needs the full history); practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 5)
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 6)
   if (market.full && market.coins.length && (now - state.lastCoach >= S.coachEveryDays * DAY - 2 * HOUR || noChamp || unchecked)) {
     const data = { coins: market.coins }
     const found = discoverStockDay(data, S, state)

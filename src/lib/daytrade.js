@@ -187,7 +187,7 @@ export function discoverDay(data, S = DT, state) {
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
     return { ...r, spec: { kind: r.kind, n: r.n, k: r.k, K: r.K, z: r.z, last: r.last, H: r.H, tf: r.tf }, text: describeDay(r), train, valid, all, pass, ev, evAll }
   })
-  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null })
+  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null, state })
 }
 
 /**
@@ -282,7 +282,7 @@ export function stepDay(state, market, now, S = DT) {
 
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 5)
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 6)
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
     const SL = withLiveCost(state, market, S)          // choose and check at CoinSpot's real round trip
     const found = discoverDay(data, SL, state)

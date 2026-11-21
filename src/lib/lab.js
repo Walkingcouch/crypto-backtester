@@ -320,7 +320,7 @@ export function discover(data, S = LAB, state) {
     return out
   })
   return assess(found0, data, {
-    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null,
+    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null, state,
     netOf: S.benchmarks ? (e => (Number.isFinite(e.ex) ? e.ex - (S.refCostBy?.[e.m] ?? S.refCost) : NaN)) : (e => e.g - S.refCost),
   })
 }
@@ -516,7 +516,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   // rule list changed (new rules added): re-test now rather than at the weekly re-test
   const ruleList = opts.discover ? null : () => (S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])])
   const newRules = !!ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 5)     // tested before the professional checks existed
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 6)     // tested before the professional checks existed
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules || unchecked) {
     const found = (opts.discover || discover)(data, withLiveCost(state, market, S), state, now)
     coach(state, found, now, S)

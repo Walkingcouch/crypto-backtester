@@ -112,6 +112,11 @@ export function evolve(data, S = EXPLORE, state, now) {
   // one honest look at the held-back period, only for ideas that clear the rising bar
   const bar = hurdle(ex.tried)
   ex.hurdle = bar
+  // luck is counted by genuinely different ideas: versions that only differ in hold or stop are
+  // near-copies, so each distinct set of conditions counts once (scaled to everything ever tried)
+  const sigs = new Set(ex.seen.map(id => id.split(':H')[0]))
+  state.trialsEff = Math.max(1, Math.round(ex.tried * sigs.size / Math.max(1, ex.seen.length)))
+  state.trialsGroups = { groups: sigs.size, rules: ex.seen.length }
   for (const p of ex.population) {
     if (p.tested || p.train.t < bar || p.train.n < S.minGradTrades) continue
     p.tested = true; ex.holdoutTests++
@@ -120,7 +125,7 @@ export function evolve(data, S = EXPLORE, state, now) {
     p.all = stats(evAll)
     p.passed = p.valid.n >= 15 && p.valid.mean > 0 && p.valid.t >= 1
     // the same professional checks as the fixed labs, with every idea ever bred counted as a try
-    const [checked] = assess([{ id: p.id, spec: p.spec, ev, evAll, pass: p.passed, train: p.train }], data, { cost: S.refCost, trials: allTrials(state, ex.tried), family: () => p.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
+    const [checked] = assess([{ id: p.id, spec: p.spec, ev, evAll, pass: p.passed, train: p.train }], data, { cost: S.refCost, trials: allTrials(state, state.trialsEff), family: () => p.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
     p.rigor = checked.rigor; p.basicPassed = p.passed; p.passed = checked.pass
     ex.log.push({ t: now, id: p.id, text: p.text, trainT: p.train.t, valid: p.valid, passed: p.passed, rigor: p.rigor })
     if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, rigor: p.rigor, gen: p.gen, at: now })
@@ -137,7 +142,7 @@ export function evolve(data, S = EXPLORE, state, now) {
   ex.graduates = ex.graduates.filter(g => {
     if (g.rigor?.v === RIGOR_V) return true
     const evAll = events(g.spec, data), ev = preSeal(evAll)
-    const [c] = assess([{ id: g.id, spec: g.spec, ev, evAll, pass: true, train: g.train }], data, { cost: S.refCost, trials: allTrials(state, ex.tried), family: () => g.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
+    const [c] = assess([{ id: g.id, spec: g.spec, ev, evAll, pass: true, train: g.train }], data, { cost: S.refCost, trials: allTrials(state, state.trialsEff), family: () => g.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
     g.rigor = c.rigor
     if (!c.pass) ex.log.push({ t: now, id: g.id, text: g.text, trainT: g.train.t, valid: g.valid, passed: false, rigor: c.rigor, note: 'removed: failed the updated professional checks (real daily ups and downs, beating random by more than costs, beating the index)' })
     return c.pass
