@@ -6,7 +6,7 @@ import { livePrice } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { runExecution } from './_lib/exec/engine.js'
 import { envFor, LEGACY, ownersFrom, settingsFor } from './_lib/exec/owners.js'
-import { labState, loadAll, store } from './_lib/exec/store.js'
+import { alertHook, labState, loadAll, store } from './_lib/exec/store.js'
 
 export default async function handler(req, res) {
   const key = (req.headers.authorization || '').replace(/^Bearer /, '')
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
         const orders = all.orders.filter(o => (o.owner || LEGACY) === owner)
         const [cryptoLab, shareLab] = await Promise.all([lab(settings.crypto_source_lab), lab(settings.share_source_lab)])
         const actions = await runExecution({
-          owner, mode: A.mode, settings, store: store(orders), crypto: A.crypto, shares: A.shares, cryptoLab, shareLab,
+          owner, mode: A.mode, settings, store: store(orders, { alert: await alertHook(owner, orders) }), crypto: A.crypto, shares: A.shares, cryptoLab, shareLab,
           now: Date.now(), refPrice: base => livePrice(`${base}USDT`), paperStartAud: +(env.PAPER_WALLET_AUD || 1000),
         })
         out[owner] = { mode: A.mode, kill: settings.kill_switch, actions }

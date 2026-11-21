@@ -8,7 +8,8 @@ import { SUPABASE_KEY, SUPABASE_URL } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { paperWallet, spent24h } from './_lib/exec/engine.js'
 import { validateOrder } from './_lib/exec/risk.js'
-import { labState, loadAll, setSettingsFor, store } from './_lib/exec/store.js'
+import { alertHook, labState, loadAll, setSettingsFor, store } from './_lib/exec/store.js'
+import { alertsReady, notify } from './_lib/exec/notify.js'
 import { envFor, keyPrefix, LEGACY, ownerOf, ownersFrom, settingsFor } from './_lib/exec/owners.js'
 
 const LIMITS = {       // sanity bounds so a typo can't set a $25,000 order
@@ -38,7 +39,13 @@ export default async function handler(req, res) {
     const body = req.method === 'POST' ? (typeof req.body === 'object' && req.body ? req.body : JSON.parse(req.body || '{}')) : {}
     const action = body.action || 'status'
     if (action === 'kill') {
-      return res.status(200).json({ settings: await setSettingsFor(me, { kill_switch: !!body.on }, who) })
+      const settings = await setSettingsFor(me, { kill_switch: !!body.on }, who)
+      await notify(me, body.on ? `🟥 Kill switch ON for ${me}'s automation (by ${who}). No orders will be placed.` : `🟩 Kill switch off for ${me}'s automation (by ${who}). Trading resumes.`)
+      return res.status(200).json({ settings })
+    }
+    if (action === 'test_alert') {
+      const r = await notify(me, `🔔 Test alert for ${me}: phone alerts from the Backtester are working.`)
+      return res.status(200).json(r)
     }
     if (action === 'settings') {
       const patch = {}
@@ -88,7 +95,7 @@ export default async function handler(req, res) {
       return {
         owner, mine: owner === me, mode: A.mode, keysSet: keys, settings, wallet, walletError,
         spent24h: +spent.toFixed(2), remaining24h: +Math.max(0, settings.max_daily_spend_aud - spent).toFixed(2),
-        orders, webhook: !!env.SHARE_ORDER_WEBHOOK_URL,
+        orders, webhook: !!env.SHARE_ORDER_WEBHOOK_URL, alerts: alertsReady(process.env, owner),
         envNames: owner === LEGACY ? 'EXECUTION_MODE, COINSPOT_API_KEY, COINSPOT_API_SECRET' : ['EXECUTION_MODE', 'COINSPOT_API_KEY', 'COINSPOT_API_SECRET'].map(n => `${n}_${owner.toUpperCase()}`).join(', '),
       }
     }))
@@ -106,7 +113,7 @@ async function testRoundTrip(owner, S, orders, who) {
   const coin = 'BTC'
   const env = envFor(process.env, owner)
   const A = adapters(env, S)
-  const mode = A.mode, crypto = A.crypto, st = store(orders), now = Date.now()
+  const mode = A.mode, crypto = A.crypto, st = store(orders, { alert: await alertHook(owner, orders) }), now = Date.now()
   const key = `${keyPrefix(owner)}test:manual:${coin}:${now}`
   const audAmt = +S.max_order_aud
   const steps = []
@@ -158,16 +165,17 @@ async function buyAnyway(owner, S, orders, who, key) {
   if (o.mode !== A.mode) return { ok: false, error: `that signal was handled in ${o.mode} mode; the bot is now in ${A.mode} mode` }
   const [lab, acct, base, openedAt] = key.slice(keyPrefix(owner).length).split(':')
   const L = await labState(lab)
-  if (!L?.accounts?.[acct]?.positions?.some(p => p.base === base && String(p.t) === openedAt)) return { ok: false, error: `the lab has already sold ${base}, so there's nothing to follow` }
+  const pos = L?.accounts?.[acct]?.positions?.find(p => p.base === base && String(p.t) === openedAt)
+  if (!pos) return { ok: false, error: `the lab has already sold ${base}, so there's nothing to follow` }
   const now = Date.now(), audAmt = +S.max_order_aud
   const w = A.mode === 'live' ? await A.crypto.getWalletBalance() : paperWallet(orders, +(env.PAPER_WALLET_AUD || 1000))
   const q = await A.crypto.getQuote(base, 'BUY', audAmt)
   const check = validateOrder({ side: 'BUY', aud: audAmt }, { mode: A.mode, settings: S, now, spent24h: spent24h(orders, A.mode, now), walletAud: w.aud, quoteRate: q.rate, proven: true })
   if (!check.ok) return { ok: false, error: check.reason }
-  const st = store(orders)
+  const st = store(orders, { alert: await alertHook(owner, orders) })
   try {
     const f = await A.crypto.placeOrder({ coin: base, side: 'BUY', aud: audAmt, rate: q.rate, thresholdPct: S.max_slippage_pct })
-    await st.put({ idem_key: key, status: f.status, requested_aud: audAmt, quote_rate: q.rate, filled_rate: f.filledRate, filled_amount: f.filledAmount, fee_aud: f.feeAud, raw: f.raw, external_id: f.externalId || null, reason: `bought anyway by ${who} (was blocked: ${o.reason})` }, true)
+    await st.put({ idem_key: key, status: f.status, requested_aud: audAmt, quote_rate: q.rate, filled_rate: f.filledRate, filled_amount: f.filledAmount, fee_aud: f.feeAud, raw: f.raw, external_id: f.externalId || null, reason: `bought anyway by ${who} (was blocked: ${o.reason})`, stop_usd: pos.stop > 0 ? +pos.stop : null, exit_by: pos.exitT ? new Date(pos.exitT).toISOString() : null }, true)
     return { ok: true, base, amount: f.filledAmount, rate: f.filledRate }
   } catch (e) {
     return { ok: false, error: `CoinSpot refused: ${e.message}` }

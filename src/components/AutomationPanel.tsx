@@ -11,12 +11,12 @@ interface Settings {
 interface Order {
   id: number; created_at: string; idem_key: string; mode: string; venue: string; source: string; side: 'BUY' | 'SELL'; asset: string; market: string
   requested_aud: number | null; requested_amount: number | null; signal_price: number | null; quote_rate: number | null; filled_rate: number | null
-  filled_amount: number | null; fee_aud: number | null; status: string; reason: string | null; raw: unknown
+  filled_amount: number | null; fee_aud: number | null; status: string; reason: string | null; raw: unknown; parent_idem?: string | null; stop_usd?: number | null
 }
 interface Status {
   owner: string; mine: boolean; envNames: string
   mode: 'paper' | 'live'; keysSet: boolean; settings: Settings; wallet: { aud: number; coins: Record<string, number> } | null; walletError: string | null
-  spent24h: number; remaining24h: number; orders: Order[]; webhook: boolean
+  spent24h: number; remaining24h: number; orders: Order[]; webhook: boolean; alerts?: boolean
 }
 interface AllStatus { who: string; me: string; perUser: boolean; accounts: Status[]; note?: string }
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -51,6 +51,7 @@ export default function AutomationPanel() {
   const [edit, setEdit] = useState<Partial<Settings>>({})
   const [test, setTest] = useState<{ armed: boolean; result: string }>({ armed: false, result: '' })
   const [arm, setArm] = useState('')
+  const [alertMsg, setAlertMsg] = useState('')
   const [fills, setFills] = useState<Record<string, { price: string; qty: string; fee: string }>>({})
 
   const call = useCallback(async (body?: object) => {
@@ -132,6 +133,12 @@ export default function AutomationPanel() {
               </>}
           {test.result && <span className="muted">{test.result}</span>}
         </div>}
+        <p className="small muted" style={{ margin: '0 0 12px' }}>
+          <b>Stop-loss watchdog:</b> every real coin the bot holds is checked against its stop-loss every minute and sold on CoinSpot as soon as the price reaches it (the labs themselves only check hourly).{' '}
+          {(() => { const held = st.orders.filter(o => o.mode === 'live' && o.side === 'BUY' && o.status === 'filled' && o.venue === 'coinspot' && !st.orders.some(x => x.side === 'SELL' && x.parent_idem === o.idem_key && ['filled', 'submitted'].includes(x.status))); return held.length ? <>Watching now: <b>{held.map(o => o.asset).join(', ')}</b>.</> : 'Nothing held right now.' })()}
+          <br /><b>Phone alerts:</b> {st.alerts ? 'on (real buys, sells, stop-loss sells, failures and kill-switch changes).' : 'off: needs a Telegram bot (see Guide → Automation alerts).'}
+          {can && <> <button className="btn btn-ghost btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { const r = await call({ action: 'test_alert' }); setAlertMsg(r.ok ? 'Sent: check Telegram.' : r.why) } catch (e) { setAlertMsg(String((e as Error).message)) } finally { setBusy(false) } }}>Send test alert</button> {alertMsg && <span>{alertMsg}</span>}</>}
+        </p>
         <Disclosure key={st.owner} title={can ? 'Guardrail settings' : `${cap(st.owner)}'s guardrail settings`}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
             {FIELDS.map(([k, label, help]) => (

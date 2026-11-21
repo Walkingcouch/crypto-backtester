@@ -27,14 +27,33 @@ export async function loadExec(days = 30) {
   return { settings: j.settings, orders: j.orders || [] }
 }
 
-export const store = orders => ({
+/** opts.alert(row, before): called after each successful write (phone alerts, notify.js). */
+export const store = (orders, opts = {}) => ({
   orders,
   put: async (row, allowUpdate = false) => {
+    const before = orders.find(o => o.idem_key === row.idem_key)
     const r = await rpc('exec_put', { row_data: row, allow_update: allowUpdate })
     if (typeof r === 'string' && r.startsWith('error')) throw new Error(`audit write failed: ${r}`)
+    if (opts.alert && r !== 'duplicate') { try { await opts.alert(row, before ? { ...before } : {}) } catch { /* an alert never blocks trading */ } }
     return r
   },
 })
+
+/** Alert hook for one owner's store: real fills and failures go to their phone. */
+export async function alertHook(owner, orders) {
+  const { notify, orderAlert } = await import('./notify.js')
+  return async (row, before) => {
+    const text = orderAlert(owner, row, before, id => orders.find(o => o.idem_key === id))
+    if (text) await notify(owner, text)
+  }
+}
+
+/** Real positions still held, with their stops, and everyone's kill switch (migration 0011). */
+export async function openPositions() {
+  const j = await rpc('exec_open', {})
+  if (typeof j === 'string') return { error: /exec_open/.test(j) ? 'run migration 0011 in Supabase' : j }
+  return j
+}
 
 export async function setSettings(patch, who) {
   const r = await rpc('exec_settings_set', { patch, who })

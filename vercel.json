@@ -47,6 +47,9 @@
     },
     "api/listings.js": {
       "maxDuration": 60
+    },
+    "api/exec-watch.js": {
+      "maxDuration": 60
     }
   },
   "headers": [
@@ -112,6 +115,10 @@
     {
       "path": "/api/exec-cron",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/exec-watch",
+      "schedule": "* * * * *"
     }
   ]
 }

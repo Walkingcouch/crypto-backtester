@@ -175,3 +175,31 @@ test('two people mirroring the same lab trade get separate orders, each tagged w
   assert.ok(!jk[0].includes('~')); assert.ok(mk[0].startsWith('mark~daytrade:john:SOL:'))
   assert.equal(mark.rows.get(mk[0]).owner, 'mark')
 })
+
+// ---------- alerts
+import { notify, orderAlert, alertsReady } from '../api/_lib/exec/notify.js'
+test('alerts go only to the account owner, and are off until configured', async () => {
+  assert.equal(alertsReady({ TELEGRAM_BOT_TOKEN: 't' }, 'mark'), false)
+  assert.equal(alertsReady({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1' }, 'mark'), false)      // never John's chat
+  assert.equal(alertsReady({ TELEGRAM_BOT_TOKEN: 't', TELEGRAM_CHAT_ID: '1' }, 'john'), true)
+  const sent = []
+  const r = await notify('mark', 'hi', { TELEGRAM_BOT_TOKEN: 'T', TELEGRAM_CHAT_ID_MARK: '42' }, async (url, init) => { sent.push([url, JSON.parse(init.body)]); return { ok: true, json: async () => ({ ok: true }) } })
+  assert.equal(r.ok, true); assert.equal(sent[0][1].chat_id, '42'); assert.ok(sent[0][0].includes('/botT/sendMessage'))
+  assert.equal((await notify('mark', 'x', {})).ok, false)
+})
+test('alerts are for real fills and failures only (not paper, not blocks)', () => {
+  const before = { mode: 'live', venue: 'coinspot', side: 'BUY', asset: 'SOL', requested_aud: 10, source: 'daytrade/john v6', stop_usd: 95 }
+  assert.match(orderAlert('john', { status: 'filled', filled_rate: 150 }, before), /bought A\$10\.00 of SOL.*Stop-loss US\$95/s)
+  assert.equal(orderAlert('john', { status: 'rejected' }, before), null)
+  assert.equal(orderAlert('john', { status: 'paper_filled' }, { ...before, mode: 'paper' }), null)
+  assert.match(orderAlert('john', { status: 'failed', reason: 'Insufficient funds' }, before), /FAILED.*Insufficient funds/)
+  const sell = orderAlert('john', { status: 'filled', filled_rate: 165, filled_amount: 0.06 }, { ...before, side: 'SELL', parent_idem: 'b' }, () => ({ filled_rate: 150 }))
+  assert.match(sell, /sold .* SOL at A\$165\.00 \(10\.0% vs the buy price/)
+})
+test('a real buy records its stop-loss and exit time for the watchdog', async () => {
+  const lab = { audPerUsd: 1.5, rules: [{ v: 1, id: 'r', rigor: { passedAll: true } }], accounts: { john: { positions: [{ base: 'SOL', t: NOW - 60_000, entryPx: 100, stop: 95, exitT: NOW + 3_600_000, v: 1 }], closed: [] } } }
+  const st = fakeStore()
+  await runExecution({ mode: 'live', settings: { ...ctx().settings, crypto_source_lab: 'daytrade', crypto_source_account: 'john' }, store: st, crypto: fakeCrypto(), shares: null, cryptoLab: lab, shareLab: null, now: NOW })
+  const row = [...st.rows.values()][0]
+  assert.equal(row.stop_usd, 95); assert.ok(row.exit_by)
+})

@@ -100,7 +100,8 @@ export async function runExecution(deps) {
       const proven = !!(r && !r.practice && r.rigor?.passedAll)
       const audAmt = +S.max_order_aud
       const signalPrice = +(p.entryPx * rate).toFixed(6)
-      const row = { idem_key: key, mode, venue: 'coinspot', source: `${labId}/${acctId} v${p.v}${r ? ` ${r.id}` : ''}${proven ? '' : ' (unproven)'}`, side: 'BUY', asset: p.base, market: 'CRYPTO', requested_aud: audAmt, signal_price: signalPrice, status: 'intent' }
+      const row = { idem_key: key, mode, venue: 'coinspot', source: `${labId}/${acctId} v${p.v}${r ? ` ${r.id}` : ''}${proven ? '' : ' (unproven)'}`, side: 'BUY', asset: p.base, market: 'CRYPTO', requested_aud: audAmt, signal_price: signalPrice, status: 'intent',
+        stop_usd: p.stop > 0 ? +p.stop : null, exit_by: p.exitT ? new Date(p.exitT).toISOString() : null }   // the watchdog sells at this stop
       if ((await save(row)) === 'duplicate') { log.push(`BUY ${p.base} duplicate suppressed`); continue }
       let quote = {}, w = null
       try { [quote, w] = await Promise.all([crypto.getQuote(p.base, 'BUY', audAmt, await ref(p.base)), getWallet()]) } catch (e) { quote = { error: String(e.message || e) } }

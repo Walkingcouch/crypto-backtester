@@ -189,6 +189,16 @@ def my_idea(df, lookback=14):
             Use API keys with trading permission only and <b>withdrawals disabled</b>.</li>
         </ol>
 
+        <h2 id="alerts">Automation alerts (Telegram)</h2>
+        <p>Phone alerts for real money only: every real buy and sell, a stop-loss sell by the one-minute watchdog, any failed order, and the kill switch going on or off. Each person only gets alerts about their own account.</p>
+        <ol>
+          <li>In Telegram, open <b>@BotFather</b>, send <code>/newbot</code>, give it a name (e.g. <i>Backtester alerts</i>) and a username ending in <code>bot</code>. It replies with a <b>token</b>.</li>
+          <li>Each person opens the new bot in Telegram and presses <b>Start</b> (send it any message).</li>
+          <li>In a browser, open <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> (your token in place of &lt;TOKEN&gt;). Each person's number is under <code>"chat":{"{"}"id": …</code>.</li>
+          <li>In Vercel → Settings → Environment Variables add <code>TELEGRAM_BOT_TOKEN</code> (Secret), <code>TELEGRAM_CHAT_ID_JOHN</code> and <code>TELEGRAM_CHAT_ID_MARK</code> (Config), then redeploy.</li>
+          <li>Markets → Automation → <b>Send test alert</b>.</li>
+        </ol>
+
         <h2 id="faq">FAQ</h2>
         <p><b>Where do prices come from?</b> Binance's public market-data API (USDT pairs). Type any Binance symbol, e.g. <code>LINKUSDT</code>.
           For other exchanges or AUD pairs, upload a CSV with columns <code>timestamp, open, high, low, close, volume</code>.</p>
