@@ -22,10 +22,11 @@ const FILTERS: { id: string; label: string; cats: string[] }[] = [
   { id: 'uspol', label: 'US politicians', cats: ['politician_us'] },
   { id: 'aupol', label: 'AU politicians', cats: ['politician_au'] },
   { id: 'social', label: 'Social catalysts', cats: ['social'] },
+  { id: 'crowd', label: 'Crypto crowd', cats: ['crowd_crypto'] },
   { id: 'insiders', label: 'Insiders & whales', cats: ['insider', 'insider_au', 'derivatives'] },
   { id: 'banks', label: 'Central banks', cats: ['central_bank'] },
 ]
-const SOURCE_NAMES: Record<string, string> = { truth: 'Truth Social (Trump)', okx: 'OKX derivatives', sec: 'SEC Form 4 insiders', senate: 'US Senate disclosures', house: 'US House disclosures', asx3y: 'ASX director notices', auMPs: 'AU politicians (PoliticianTrades.au)', banks: 'Fed & RBA statements' }
+const SOURCE_NAMES: Record<string, string> = { crowd: 'Reddit buzz & CoinGecko trending', truth: 'Truth Social (Trump)', okx: 'OKX derivatives', sec: 'SEC Form 4 insiders', senate: 'US Senate disclosures', house: 'US House disclosures', asx3y: 'ASX director notices', auMPs: 'AU politicians (PoliticianTrades.au)', banks: 'Fed & RBA statements' }
 const when = (t: number) => new Date(t).toLocaleString('en-AU', { timeZone: 'Australia/Darwin', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 const day = (t: number) => new Date(t).toLocaleDateString('en-AU', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })
 const usd = (x: number) => (x >= 1e6 ? `US$${(x / 1e6).toFixed(1)}m` : x >= 1e3 ? `US$${Math.round(x / 1e3)}k` : `US$${x}`)

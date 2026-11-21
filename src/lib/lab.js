@@ -515,7 +515,7 @@ function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * 
   const note = why => { push(a.lastBlocked, { t: now, base, v: r.v, why }, 30) }
   if (a.positions.some(x => x.base === base)) return
   const spread = market.quotes?.[a.id]?.[base]
-  if (!(spread >= 0)) { a.blocked.quote++; note(`no live ${a.exchange} quote for ${base}`); return }
+  if (!(spread >= 0)) { a.blocked.quote++; note(market.unlisted?.[a.id]?.[base] ? `${a.exchange} doesn't sell ${base}` : `no live ${a.exchange} quote for ${base}`); return }
   const estimated = !!market.estimated?.[a.id]?.[base]
   const rate = market.audPerUsd
   const cashUsd = a.cashAud / rate

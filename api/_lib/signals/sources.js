@@ -303,3 +303,59 @@ export async function centralBanks({ seen = [] } = {}) {
   return out
 }
 
+
+// ------------------------------------------------------------------ Crypto crowd: Reddit buzz and CoinGecko trending
+// Reddit only shows what's hot right now, so the history has to be built up run by run: each run
+// counts how many hot posts across the crypto subreddits mention each coin, and keeps those counts.
+// A "buzz spike" is a coin mentioned in at least 4 hot posts and at least 3 times its own recent
+// average (needs 12 hours of history first), at most once a day per coin. A coin that newly joins
+// CoinGecko's trending list is a "trending" event. Both are only signals to be TESTED by the report
+// card: research mostly finds social buzz follows price moves rather than leading them.
+const CROWD_SKIP = new Set(['ONE', 'NOT', 'SUN', 'GAS', 'HOT', 'THE', 'ALL', 'ANY', 'NEW', 'BIG', 'LOW', 'TOP', 'NOW', 'WIN', 'USD', 'ETF', 'CEO', 'SEC', 'FED', 'ATH', 'API', 'NFT', 'DAO', 'DEX', 'CEX', 'KYC', 'GDP', 'CPI', 'IMO', 'LOL', 'WTF', 'FUD', 'APE', 'MEME', 'PUMP', 'TRUMP', 'MOVE', 'OPEN', 'REAL', 'SAFE', 'FREE', 'TRUST', 'HOME', 'LAYER', 'BANK', 'GOLD'])
+export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date.now() } = {}) {
+  const chatter = await collect()
+  const posts = chatter.social || []
+  const okSubs = Object.entries(chatter.sources || {}).filter(([k, v]) => k.startsWith('r/') && v.ok).length
+  // which coins to count: the 80 most traded on Binance (stablecoins and look-alike words skipped)
+  let bases = []
+  try {
+    const t = JSON.parse(await get('https://data-api.binance.vision/api/v3/ticker/24hr'))
+    bases = t.filter(x => x.symbol.endsWith('USDT')).sort((a, b) => +b.quoteVolume - +a.quoteVolume).map(x => x.symbol.slice(0, -4))
+      .filter(b => /^[A-Z]{3,10}$/.test(b) && !/USD|EUR|^U$/.test(b) && !CROWD_SKIP.has(b)).slice(0, 80)
+  } catch { bases = Object.keys(aliases) }
+  for (const b of Object.keys(aliases)) if (!bases.includes(b)) bases.push(b)
+  const counts = {}
+  for (const b of bases) {
+    const names = (aliases[b] || []).filter(n => n.length >= 4)
+    const re = new RegExp(`(^|[^A-Za-z0-9])\\$?${b}([^A-Za-z0-9]|$)`)          // ticker in capitals, or $TICKER
+    let n = 0
+    for (const p of posts) {
+      const text = `${p.title || ''} ${p.summary || ''}`, lower = ` ${text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ')} `
+      if (re.test(text) || names.some(nm => lower.includes(` ${nm} `))) n++
+    }
+    counts[b] = n
+  }
+  const hist = { ...(prev.hist || {}) }, lastSpike = { ...(prev.lastSpike || {}) }
+  const out = []
+  if (okSubs >= 2) {                                  // don't learn "normal" from a run where Reddit was blocked
+    for (const b of bases) {
+      const h = hist[b] || []
+      const avg = h.length ? h.reduce((a, x) => a + x, 0) / h.length : 0
+      if (h.length >= 24 && counts[b] >= 4 && counts[b] >= 3 * Math.max(avg, 1) && !(lastSpike[b] && now - lastSpike[b] < DAY)) {
+        lastSpike[b] = now
+        out.push({ source: 'Reddit', sourceUrl: 'https://www.reddit.com/r/CryptoCurrency/hot/', category: 'crowd_crypto', entity_name: 'Reddit buzz spike', entity_role: 'Crypto subreddits',
+          asset_ticker: b, asset_name: b, market: 'CRYPTO', action: 'ALERT', trade_size_usd: null, trade_date: null, disclosed_at: now, post_id: `reddit-${b}-${new Date(now).toISOString().slice(0, 13)}`,
+          sentiment_score: 0.3, conflict_score: null, text: `${b}: in ${counts[b]} hot posts across ${okSubs} crypto subreddits, vs about ${avg.toFixed(1)} normally. Untested: the report card grades whether buzz like this came before rises or before falls.` })
+      }
+      hist[b] = [...h, counts[b]].slice(-336)          // a week of half-hourly runs
+    }
+  }
+  const trending = (chatter.trending || []).map(c => c.symbol).filter(Boolean)
+  if (prev.trending) for (const c of chatter.trending || []) {
+    if (prev.trending.includes(c.symbol) || !/^[A-Z0-9]{2,10}$/.test(c.symbol)) continue
+    out.push({ source: 'CoinGecko', sourceUrl: 'https://www.coingecko.com/en/highlights/trending-crypto', category: 'crowd_crypto', entity_name: 'CoinGecko trending', entity_role: 'Most searched coins',
+      asset_ticker: c.symbol, asset_name: c.name, market: 'CRYPTO', action: 'ALERT', trade_size_usd: null, trade_date: null, disclosed_at: now, post_id: `cg-${c.symbol}-${new Date(now).toISOString().slice(0, 13)}`,
+      sentiment_score: 0.3, conflict_score: null, text: `${c.name} (${c.symbol}) joined CoinGecko's trending list${c.rank ? ` (market-cap rank ${c.rank})` : ''}. Untested: the report card grades what trending coins did next.` })
+  }
+  return { signals: out, snapshot: { hist, lastSpike, trending: chatter.sources?.coingecko?.ok ? trending : (prev.trending || null), counts, okSubs, at: now } }
+}

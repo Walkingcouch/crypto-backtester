@@ -76,6 +76,17 @@ export async function binanceSpreads() {
 // scanned coin missing from the feed the Lab assumes a cautious 1% spread and labels it.
 const COINSPOT_EST_SPREAD = 0.01
 
+/** Coins CoinSpot actually sells (from this site's /api/listings, which checks CoinSpot's public
+ *  API and is cached for an hour). null when unknown: then every coin is allowed, as before. */
+export async function coinspotListed() {
+  try {
+    const host = process.env.VERCEL_PROJECT_PRODUCTION_URL || 'crypto-backtester-au.vercel.app'
+    const j = await getJSON(`https://${host}/api/listings`, 30000)
+    const cs = j?.exchanges?.coinspot
+    return cs?.ok && !cs.partial ? new Set(cs.coins) : null
+  } catch { return null }
+}
+
 export async function coinbaseSpreads(bases) {
   const out = {}
   await Promise.all(bases.map(async b => {
@@ -119,8 +130,8 @@ export function labHandler(opts) {
       for (const s of saved?.shadow || []) held.add(s.base)
       const want = [...new Set([...universe, ...held])]
 
-      const [rate, cs, cb, bn, coins] = await Promise.all([
-        audPerUsd(), coinspotSpreads(), coinbaseSpreads(want), binanceSpreads(),
+      const [rate, cs, cb, bn, csListed, coins] = await Promise.all([
+        audPerUsd(), coinspotSpreads(), coinbaseSpreads(want), binanceSpreads(), coinspotListed(),
         Promise.all(want.map(b => bars(b, interval, typeof pages === 'function' ? pages(saved, Date.now()) : pages).catch(() => null))),
       ])
       const live = {}
@@ -131,7 +142,13 @@ export function labHandler(opts) {
         live, audPerUsd: rate,
         quotes: { john: { ...cs }, mark: cb, binance: bn }, estimated: { john: {} },
       }
-      for (const c of market.coins) if (market.quotes.john[c.base] == null) { market.quotes.john[c.base] = COINSPOT_EST_SPREAD; market.estimated.john[c.base] = true }
+      // a coin missing from CoinSpot's price feed gets an estimated spread only if CoinSpot sells it;
+      // one it doesn't sell (e.g. MMT) gets no quote, so the CoinSpot account can't buy it
+      market.unlisted = { john: {} }
+      for (const c of market.coins) if (market.quotes.john[c.base] == null) {
+        if (csListed && !csListed.has(c.base)) { market.unlisted.john[c.base] = true; continue }
+        market.quotes.john[c.base] = COINSPOT_EST_SPREAD; market.estimated.john[c.base] = true
+      }
       if (opts.events) market.events = await weekCalendar().catch(() => [])
       const now = Date.now()
       const state = stepFn(saved ? structuredClone(saved) : newState(rate, now), market, now)

@@ -23,6 +23,7 @@ export const CATEGORY = {
   social:      { label: 'Social catalysts',      base: 0.30, dayHalfLife: 6 * HOUR, swingHalfLife: 3 * DAY },
   central_bank:{ label: 'Central banks',         base: 0.50, dayHalfLife: 12 * HOUR, swingHalfLife: 10 * DAY },
   derivatives: { label: 'Crypto derivatives',    base: 0.40, dayHalfLife: 8 * HOUR, swingHalfLife: 3 * DAY },
+  crowd_crypto:{ label: 'Crypto crowd (untested)', base: 0.15, dayHalfLife: 6 * HOUR, swingHalfLife: 2 * DAY },
 }
 
 /** Same fact = same person, same asset, same direction, same trade day (or same post). */

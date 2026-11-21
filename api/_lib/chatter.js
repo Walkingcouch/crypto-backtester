@@ -109,7 +109,7 @@ export async function collect() {
 }
 
 // --- matching a coin in text
-const ALIASES = {
+export const ALIASES = {
   BTC: ['bitcoin', 'btc'], ETH: ['ethereum', 'ether', 'eth'], SOL: ['solana', 'sol'], XRP: ['xrp', 'ripple'],
   ADA: ['cardano', 'ada'], DOGE: ['dogecoin', 'doge'], LINK: ['chainlink'], AVAX: ['avalanche', 'avax'],
   DOT: ['polkadot'], LTC: ['litecoin', 'ltc'], BNB: ['bnb', 'binance coin'], TRX: ['tron', 'trx'], TON: ['toncoin'],

@@ -352,7 +352,7 @@ function enterDay(a, r, base, p, sp, pos0, market, now, S, log) {
   const note = why => push(a.lastBlocked, { t: now, base, v: r.v, why }, 30)
   if (a.positions.some(x => x.base === base && (x.v === r.v || !r.practice))) return
   const spread = market.quotes?.[a.id]?.[base]
-  if (!(spread >= 0)) { a.blocked.quote++; note(`no live ${a.exchange} quote for ${base}`); return }
+  if (!(spread >= 0)) { a.blocked.quote++; note(market.unlisted?.[a.id]?.[base] ? `${a.exchange} doesn't sell ${base}` : `no live ${a.exchange} quote for ${base}`); return }
   const cost = 2 * a.fee + spread + 2 * S.slippage
   const est = estimate(r.all)
   if (!r.practice && !(est > cost + S.margin)) { a.blocked.cost++; note(`expected gain ${pct(est)} doesn't cover costs ${pct(cost)} + margin ${pct(S.margin)}`); return }

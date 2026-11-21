@@ -4,17 +4,18 @@
 // nothing is saved.
 import { extractText, getDocumentProxy } from 'unpdf'
 import { merge, rangeLoHi, score } from './_lib/signals/schema.js'
-import { asx3Y, auPoliticians, centralBanks, cryptoDerivatives, housePTRs, secForm4, senatePTRs, truthSocial } from './_lib/signals/sources.js'
+import { asx3Y, auPoliticians, centralBanks, cryptoCrowd, cryptoDerivatives, housePTRs, secForm4, senatePTRs, truthSocial } from './_lib/signals/sources.js'
 import { weekCalendar } from './_lib/econ.js'
 import { backfillLedger, enrichOrders } from './_lib/signals/orders.js'
 import { rpc, sb } from './_lib/forecaster.js'
+import { ALIASES, collect } from './_lib/chatter.js'
 import { ASX } from '../src/lib/stocks.js'
 
 const HOUR = 3_600_000, DAY = 86_400_000
 const pdfText = async bytes => { const doc = await getDocumentProxy(bytes); const { text } = await extractText(doc, { mergePages: true }); return text }
 
 // how often each connector runs (fast catalysts every half hour, slow disclosures a few times a day)
-const EVERY = { truth: 0, okx: 0, sec: 0, senate: 6 * HOUR, house: 6 * HOUR, asx3y: 3 * HOUR, auMPs: 12 * HOUR, banks: 2 * HOUR }
+const EVERY = { truth: 0, okx: 0, crowd: 0, sec: 0, senate: 6 * HOUR, house: 6 * HOUR, asx3y: 3 * HOUR, auMPs: 12 * HOUR, banks: 2 * HOUR }
 
 /** Is each BUY's asset at a new 20-day closing high? (technical-confirmation badge) */
 async function breakouts(list) {
@@ -46,6 +47,7 @@ export default async function handler(req, res) {
   let state = null
   try { const r = await sb('/rest/v1/lab_state?id=eq.signals&select=data'); if (r.ok) state = (await r.json())[0]?.data ?? null } catch { /* fresh */ }
   state ||= { signals: [], runs: {}, status: {}, derivatives: {}, banksSeen: [] }
+  state.crowd ||= {}
   const due = k => q.get('all') === '1' || !state.runs[k] || now - state.runs[k] >= EVERY[k] - 5 * 60_000
   const incoming = [], status = {}
   const run = async (k, fn) => {
@@ -59,6 +61,7 @@ export default async function handler(req, res) {
   }
   await Promise.all([
     run('truth', () => truthSocial()),
+    run('crowd', async () => { const c = await cryptoCrowd({ prev: state.crowd || {}, collect, aliases: ALIASES, now }); state.crowd = c.snapshot; return c.signals }),
     run('okx', async () => { const d = await cryptoDerivatives({ prevOI: state.derivatives }); state.derivatives = d.snapshot; return d.signals }),
     run('banks', async () => { const b = await centralBanks({ seen: state.banksSeen }); state.banksSeen = [...state.banksSeen, ...b.map(x => x.post_id)].slice(-50); return b }),
     run('auMPs', () => auPoliticians()),
@@ -93,5 +96,5 @@ export default async function handler(req, res) {
   let saved = null
   if (!dry) saved = await rpc('lab_put', { sid: 'signals', payload: state })
   res.setHeader('cache-control', dry ? 'public, s-maxage=600' : 'no-store')
-  res.status(200).json({ dry, saved, ms: Date.now() - t0, added, total: state.signals.length, status: state.status, signals: state.signals.slice(0, q.get('full') ? 1500 : 60) })
+  res.status(200).json({ dry, saved, ms: Date.now() - t0, added, total: state.signals.length, status: state.status, crowd: { okSubs: state.crowd.okSubs, runs: Object.values(state.crowd.hist || {})[0]?.length || 0, trending: state.crowd.trending, top: Object.entries(state.crowd.counts || {}).sort((a, b) => b[1] - a[1]).slice(0, 10) }, signals: state.signals.slice(0, q.get('full') ? 1500 : 60) })
 }

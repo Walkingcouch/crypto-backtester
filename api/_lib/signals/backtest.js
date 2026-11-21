@@ -33,6 +33,9 @@ export const STREAMS = [
   { id: 'asx-directors', name: 'ASX director notices (direction not read yet: tested as a buy)', cat: 'insider_au', pick: () => true, dir: () => 1 },
   { id: 'truth', name: 'Truth Social posts (positive = buy, negative = sell)', cat: 'social', pick: s => (s.sent || 0) !== 0, dir: s => Math.sign(s.sent) },
   { id: 'cb-tone', name: 'Fed and RBA statements (dovish = buy, hawkish = sell)', cat: 'central_bank', pick: s => (s.sent || 0) !== 0, dir: s => Math.sign(s.sent) },
+  { id: 'reddit-buzz', name: 'Reddit buzz spikes (tested as a buy)', cat: 'crowd_crypto', pick: s => s.who === 'redditbuzzspike', dir: () => 1 },
+  { id: 'reddit-fade', name: 'Reddit buzz spikes, faded (tested as a sell: buzz marks a top)', cat: 'crowd_crypto', pick: s => s.who === 'redditbuzzspike', dir: () => -1 },
+  { id: 'cg-trending', name: 'Coins joining CoinGecko trending (tested as a buy)', cat: 'crowd_crypto', pick: s => s.who === 'coingeckotrending', dir: () => 1 },
   { id: 'crypto-funding', name: 'Crypto futures crowding (crowded longs = sell, crowded shorts = buy)', cat: 'derivatives', pick: s => (s.sent || 0) !== 0, dir: s => Math.sign(s.sent) },
 ]
 
