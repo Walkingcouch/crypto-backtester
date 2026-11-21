@@ -45,6 +45,7 @@ export default function AutomationPanel() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState<Partial<Settings>>({})
+  const [test, setTest] = useState<{ armed: boolean; result: string }>({ armed: false, result: '' })
   const [fills, setFills] = useState<Record<string, { price: string; qty: string; fee: string }>>({})
 
   const call = useCallback(async (body?: object) => {
@@ -101,6 +102,20 @@ export default function AutomationPanel() {
           The bot never moves money in or out of CoinSpot: it can only buy and sell with what's already in the wallet.
           {st.mode === 'paper' && ' Switching to live is done only in Vercel (EXECUTION_MODE=live), never from this page.'}
         </p>
+        <div className="small" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 12px' }}>
+          {!test.armed
+            ? <button className="btn btn-ghost btn-sm" disabled={busy || S.kill_switch} onClick={() => setTest({ armed: true, result: '' })}>Test order: buy and sell {aud(S.max_order_aud)} of BTC</button>
+            : <>
+                <span>{st.mode === 'live' ? <b className="neg">Real money:</b> : 'Simulated:'} buys {aud(S.max_order_aud)} of BTC, then sells the same amount a few seconds later. Costs about {aud(S.max_order_aud * 0.012)} in fees and price gap.</span>
+                <button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => {
+                  setBusy(true)
+                  try { const r = await call({ action: 'test_roundtrip' }); setTest({ armed: false, result: (r.steps || []).join(' · ') + (r.ok ? ` · cost ${aud(r.cost)}` : '') }); await load() }
+                  catch (e) { setTest({ armed: false, result: String((e as Error).message) }) } finally { setBusy(false) }
+                }}>Confirm test order</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setTest({ armed: false, result: '' })}>Cancel</button>
+              </>}
+          {test.result && <span className="muted">{test.result}</span>}
+        </div>
         <Disclosure title="Guardrail settings">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
             {FIELDS.map(([k, label, help]) => (

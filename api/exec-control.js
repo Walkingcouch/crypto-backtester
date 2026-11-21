@@ -5,6 +5,7 @@
 import { SUPABASE_KEY, SUPABASE_URL } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { paperWallet, spent24h } from './_lib/exec/engine.js'
+import { validateOrder } from './_lib/exec/risk.js'
 import { loadExec, setSettings, store } from './_lib/exec/store.js'
 
 const LIMITS = {       // sanity bounds so a typo can't set a $25,000 order
@@ -50,6 +51,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ settings: await setSettings(patch, who) })
     }
     const { settings, orders } = await loadExec(body.days || 30)
+    if (action === 'test_roundtrip') return res.status(200).json(await testRoundTrip(settings, orders, who))
     if (action === 'mark_executed' || action === 'dismiss') {
       const o = orders.find(x => x.idem_key === body.idem_key)
       if (!o || o.venue !== 'superhero' || o.status !== 'pending_manual') return res.status(400).json({ error: 'not a pending share order' })
@@ -78,5 +80,52 @@ export default async function handler(req, res) {
     })
   } catch (e) {
     res.status(500).json({ error: String(e && e.message || e) })
+  }
+}
+
+// Test order: buy the per-order amount of BTC, then sell exactly what was bought a few seconds later.
+// Proves the whole live path (quote, buy, balance, sell) without waiting for a lab signal. Goes
+// through the same guardrails (kill switch, per-order and daily caps, reserve, slippage) and is
+// written to the same audit log, marked as a manual test.
+async function testRoundTrip(S, orders, who) {
+  const coin = 'BTC'
+  const A = adapters(process.env, S)
+  const mode = A.mode, crypto = A.crypto, st = store(orders), now = Date.now()
+  const key = `test:manual:${coin}:${now}`
+  const audAmt = +S.max_order_aud
+  const steps = []
+  const wallet = async () => mode === 'live' ? crypto.getWalletBalance() : paperWallet(orders, +(process.env.PAPER_WALLET_AUD || 1000))
+  const w0 = await wallet()
+  const qb = await crypto.getQuote(coin, 'BUY', audAmt)
+  const check = validateOrder({ side: 'BUY', aud: audAmt }, { mode, settings: S, now, spent24h: spent24h(orders, mode, now), walletAud: w0.aud, quoteRate: qb.rate, proven: true })
+  const buyRow = { idem_key: `${key}:BUY`, mode, venue: 'coinspot', source: `manual test by ${who}`, side: 'BUY', asset: coin, market: 'CRYPTO', requested_aud: audAmt, signal_price: qb.rate, quote_rate: qb.rate, status: 'intent' }
+  await st.put(buyRow)
+  if (!check.ok) { await st.put({ idem_key: buyRow.idem_key, status: 'rejected', reason: check.reason }, true); return { ok: false, mode, steps: [`BUY blocked: ${check.reason}`] } }
+  let fb
+  try { fb = await crypto.placeOrder({ coin, side: 'BUY', aud: audAmt, rate: qb.rate, thresholdPct: S.max_slippage_pct }) }
+  catch (e) { await st.put({ idem_key: buyRow.idem_key, status: 'failed', reason: String(e.message || e), raw: e.raw || null }, true); return { ok: false, mode, steps: [`BUY failed: ${e.message}`] } }
+  await st.put({ idem_key: buyRow.idem_key, status: fb.status, filled_rate: fb.filledRate, filled_amount: fb.filledAmount, fee_aud: fb.feeAud, raw: fb.raw, external_id: fb.externalId || null }, true)
+  steps.push(`BUY ${coin} ${fb.status}: ${fb.filledAmount} at ${fb.filledRate}`)
+  // sell exactly what this test bought: the smaller of what CoinSpot reported and what the wallet gained
+  let amount = +fb.filledAmount || 0
+  if (mode === 'live') {
+    await new Promise(r => setTimeout(r, 3000))
+    const w1 = await wallet()
+    const gained = (w1.coins[coin] || 0) - (w0.coins[coin] || 0)
+    if (gained > 0) amount = amount > 0 ? Math.min(amount, gained) : gained
+  }
+  const sellRow = { idem_key: `${key}:SELL`, mode, venue: 'coinspot', source: `manual test by ${who}`, side: 'SELL', asset: coin, market: 'CRYPTO', requested_amount: amount, parent_idem: buyRow.idem_key, status: 'intent' }
+  await st.put(sellRow)
+  if (!(amount > 0)) { await st.put({ idem_key: sellRow.idem_key, status: 'failed', reason: 'could not tell how much BTC was bought; sell it in CoinSpot by hand' }, true); return { ok: false, mode, steps: [...steps, 'SELL skipped: bought amount unknown'] } }
+  try {
+    const qs = await crypto.getQuote(coin, 'SELL', amount * qb.rate)
+    const fs = await crypto.placeOrder({ coin, side: 'SELL', amount, rate: qs.rate, thresholdPct: S.max_slippage_pct })
+    await st.put({ idem_key: sellRow.idem_key, status: fs.status, quote_rate: qs.rate, signal_price: qs.rate, filled_rate: fs.filledRate, filled_amount: fs.filledAmount, fee_aud: fs.feeAud, raw: fs.raw, external_id: fs.externalId || null }, true)
+    steps.push(`SELL ${coin} ${fs.status}: ${amount} at ${fs.filledRate}`)
+    const back = fs.totalAud ?? amount * fs.filledRate
+    return { ok: true, mode, steps, spent: audAmt, back: +(+back).toFixed(2), cost: +(audAmt - back).toFixed(2) }
+  } catch (e) {
+    await st.put({ idem_key: sellRow.idem_key, status: 'failed', reason: String(e.message || e), raw: e.raw || null }, true)
+    return { ok: false, mode, steps: [...steps, `SELL failed: ${e.message}. The BTC is in your wallet; sell it in CoinSpot or try again.`] }
   }
 }
