@@ -128,16 +128,36 @@ export function labHandler(opts) {
       const held = new Set()
       for (const a of Object.values(saved?.accounts || {})) for (const p of a.positions) held.add(p.base)
       for (const s of saved?.shadow || []) held.add(s.base)
-      const want = [...new Set([...universe, ...held])]
+      const nPages = typeof pages === 'function' ? pages(saved, Date.now()) : pages
+      const csListed = await coinspotListed()
+      // wide mode (Day trading): trade every coin CoinSpot sells that Binance also lists with real
+      // volume. Rules are still chosen and checked on the deep-history top coins (5 years); the rest
+      // get the latest 1000 bars, enough for signals, stops and the learning record.
+      let wideCoins = []
+      if (opts.wide && csListed) {
+        wideCoins = tickers
+          .filter(t => t.symbol.endsWith('USDT') && +t.lastPrice > 0 && t.count > 0 && +t.quoteVolume >= (opts.wideMinVolUsd ?? 1e6))
+          .map(t => t.symbol.slice(0, -4))
+          .filter(b => csListed.has(b) && !universe.includes(b) && !STABLES.has(b) && !NOT_COINS.has(b) && !isStockToken(b) && !/(UP|DOWN|BULL|BEAR)$/.test(b))
+      }
+      const want = [...new Set([...universe, ...wideCoins, ...held])]
+      const deepSet = new Set([...universe, ...held])
+      const fetchBars = async () => {                 // at most 16 requests in flight, to stay polite to Binance
+        const out = new Array(want.length); let k = 0
+        await Promise.all(Array.from({ length: 16 }, async () => {
+          while (k < want.length) { const i = k++; out[i] = await bars(want[i], interval, deepSet.has(want[i]) ? nPages : 1).catch(() => null) }
+        }))
+        return out
+      }
 
-      const [rate, cs, cb, bn, csListed, coins] = await Promise.all([
-        audPerUsd(), coinspotSpreads(), coinbaseSpreads(want), binanceSpreads(), coinspotListed(),
-        Promise.all(want.map(b => bars(b, interval, typeof pages === 'function' ? pages(saved, Date.now()) : pages).catch(() => null))),
+      const [rate, cs, cb, bn, coins] = await Promise.all([
+        audPerUsd(), coinspotSpreads(), coinbaseSpreads([...deepSet]), binanceSpreads(), fetchBars(),
       ])
       const live = {}
       for (const t of tickers) if (t.symbol.endsWith('USDT')) live[t.symbol.slice(0, -4)] = +t.lastPrice
       const market = {
-        coins: coins.filter(c => c && c.c.length > minBars && universe.includes(c.base)),
+        coins: coins.filter(c => c && c.c.length > minBars && (universe.includes(c.base) || wideCoins.includes(c.base))),
+        deep: opts.wide ? coins.filter(c => c && c.c.length > minBars && universe.includes(c.base)) : undefined,
         held: Object.fromEntries(coins.filter(c => c && held.has(c.base)).map(c => [c.base, c])),
         live, audPerUsd: rate,
         quotes: { john: { ...cs }, mark: cb, binance: bn }, estimated: { john: {} },
@@ -157,7 +177,7 @@ export function labHandler(opts) {
       res.setHeader('cache-control', dry ? 'public, s-maxage=1800, stale-while-revalidate=7200' : 'no-store')
       res.status(200).send(JSON.stringify({
         dry, saved: dry ? null : saved, ms: Date.now() - t0, summary: summary(state),
-        quotes: { coinspot: Object.keys(cs).length, coinbase: Object.keys(cb).length, binance: Object.keys(bn).length }, state,
+        wide: wideCoins.length, quotes: { coinspot: Object.keys(cs).length, coinbase: Object.keys(cb).length, binance: Object.keys(bn).length }, state,
       }))
     } catch (e) {
       res.status(500).json({ error: String(e && e.message || e) })

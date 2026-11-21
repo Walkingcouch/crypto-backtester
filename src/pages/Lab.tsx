@@ -137,12 +137,12 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
   },
   day: {
     key: 'day', kind: 'day', family: 'crypto', sid: 'daytrade', api: '/api/daytrade-cron?dry=1', S: DT as unknown as Settings, title: 'Day trading', unit: 'hours', every: 'every hour',
-    intro: <>Tests day-trading rules from published research on 1-hour candles, and closes every position by the end of the day (00:00 UTC, 9:30am Darwin). Same honest loop as the main Lab, plus a walk-forward test and a daily loss limit. Expect most rules to fail once costs are counted.</>,
+    intro: <>Tests day-trading rules from published research on 1-hour candles, and closes every position by the end of the day (00:00 UTC, 9:30am Darwin). Same honest loop as the main Lab, plus a walk-forward test and a daily loss limit. It watches every coin CoinSpot sells that also trades on Binance with at least US$1M a day; rules are chosen on 5 years of the 10 most-traded coins. Expect most rules to fail once costs are counted.</>,
     howto: [['Six families of ideas', "Intraday momentum, overreaction reversal, opening-range breakout, volatility breakout, calm-market mean reversion and 'recent movers' (buying right after a big 1-hour jump), each with and without a daily-trend filter (58 rules)."],
-      ['Costs decide everything', 'A day trade must beat a full buy and sell. On Coinbase at 0.6% each way that is 1.2%+ a trade, so its account will rarely trade.'],
+      ['Costs decide everything', 'A day trade must beat a full buy and sell. CoinSpot instant buy/sell is 1% each way plus its price gap, so about 3% a round trip; Coinbase is 0.6% each way. Few day trades clear that.'],
       ['Tight limits', `Stops on every trade, at most ${(DT.riskPerTrade * 100).toFixed(1)}% of the account at risk per trade, and no new trades for the rest of the day after a ${pct0(DT.dailyLossLimit)} drop.`]],
     noRule: 'No day-trading rule passed both checks after costs. That is the most common honest result: most published intraday edges are smaller than the cost of trading them.',
-    tested: <>Each rule was tried on about 11 months of hourly candles for the 10 most-traded coins. To pass: at least {DT.minTrain} trades and a t-score of {DT.minTrainT}+ after {pct(DT.refCost)} costs a trade on the older data, and still profitable on the last {DT.validDays} days.</>,
+    tested: <>Each rule was tried on about 5 years of hourly candles for the 10 most-traded coins (signals then run on every CoinSpot coin). To pass: at least {DT.minTrain} trades and a t-score of {DT.minTrainT}+ after {pct(DT.refCost)} costs a trade on the older data, and still profitable on the last {DT.validDays} days.</>,
     stops: (S: Settings) => (<ul>
       <li><b>Distance:</b> 2 times the coin's typical hourly move over the planned hold, between 0.8% and 5% below the buy price.</li>
       <li><b>Checked on every hourly candle</b> since the buy, including gaps: if a candle opens below the stop, the sale happens at that open.</li>

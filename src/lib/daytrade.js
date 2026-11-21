@@ -243,7 +243,7 @@ export function stepDay(state, market, now, S = DT) {
   const price = b => market.live[b]
   const coinOf = b => market.coins.find(c => c.base === b) || market.held?.[b]
   const ruleByV = new Map(state.rules.map(r => [r.v, r]))
-  const data = { coins: market.coins }
+  const data = { coins: market.deep || market.coins }   // rules are chosen on deep history; signals run on every coin
   state.unit = 'hours'
 
   // closes everything whose bars up to `upTo` say it's done (stop, early exit, end of hold)
@@ -277,7 +277,7 @@ export function stepDay(state, market, now, S = DT) {
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
   const unchecked = state.found?.length && !state.found.some(f => f.rigor)
-  if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && market.coins.length) {
+  if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
     const found = discoverDay(data, S, state)
     state.walk = walkForward(found, data, S)
     if (found.some(f => f.pass)) {
