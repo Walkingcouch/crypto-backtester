@@ -67,3 +67,31 @@ test('rules are chosen at the live exchange\'s real round trip, and each exchang
   const S2 = withLiveCost(state, market, { refCost: 0.003, slippage: 0.0005 })
   assert.equal(S2.refCost, v.john.cost); assert.equal(state.selectCost.exchange, 'CoinSpot')
 })
+
+import { EXITS, ruleId, describe as describeRule } from '../src/lib/lab.js'
+// a coin that breaks out, rises 30%, then gives it all back
+function runUp() {
+  const t = [], o = [], h = [], l = [], c = [], v = []
+  let p = 100, s = 5; const R = () => (s = (s * 16807) % 2147483647) / 2147483647
+  for (let i = 0; i < 260; i++) {
+    const drift = i < 230 ? (R() - 0.5) * 0.02 : i < 245 ? 0.02 : -0.03
+    const op = p; p *= Math.exp(drift)
+    t.push(T0 + i * DAY); o.push(op); c.push(p); h.push(Math.max(op, p) * 1.003); l.push(Math.min(op, p) * 0.997); v.push(1)
+  }
+  return { base: 'X', t, o, h, l, c, v }
+}
+test('exit styles: a trailing stop or a target keeps profit that a plain time exit gives back', () => {
+  const base = { kind: 'breakout', n: 20, regime: 'any', H: 20 }
+  const plain = events(base, { coins: [runUp()] }).find(e => e.t >= T0 + 230 * DAY)
+  const trail = events({ ...base, exit: { k: 'trail', m: 3 } }, { coins: [runUp()] }).find(e => e.t >= T0 + 230 * DAY)
+  const tp = events({ ...base, exit: { k: 'tp', r: 2 } }, { coins: [runUp()] }).find(e => e.t >= T0 + 230 * DAY)
+  assert.ok(plain && trail && tp)
+  assert.ok(trail.g > plain.g, `trail ${trail.g} vs plain ${plain.g}`)
+  assert.ok(tp.g > 0 && tp.exitT < plain.exitT)
+})
+test('every exit style is its own rule with its own id and wording', () => {
+  const ids = EXITS.map(x => ruleId({ kind: 'breakout', n: 20, regime: 'any', H: 10, exit: x }))
+  assert.equal(new Set(ids).size, EXITS.length)
+  assert.match(describeRule({ kind: 'breakout', n: 20, regime: 'any', H: 10, exit: { k: 'trail', m: 3 } }), /Trailing stop/)
+  assert.match(describeRule({ kind: 'dip', k: 1.5, regime: 'any', H: 5, exit: { k: 'tp', r: 2 } }), /Takes profit at 2×/)
+})

@@ -60,7 +60,7 @@ interface Variant {
 const STOPS_SWING = (S: Settings, H?: number) => (<ul>
   <li><b>Distance:</b> about 2.5 times the coin's typical move over the holding period (using the last 20 days' daily swings, counting up to 10 days of holding). Calm coins get a tighter stop, wild coins a wider one, so ordinary wobbles don't trigger it.</li>
   <li><b>Limits:</b> never closer than 5% or further than 25% below the buy price.</li>
-  <li><b>Fixed once set:</b> it isn't moved up or down while the coin is held (no trailing stop).</li>
+  <li><b>Moves only up, and only for some rules:</b> most rules keep the stop where it was set. Rules marked <i>trailing stop</i> raise it as the price climbs (a set number of normal daily moves below the highest price since buying), and <i>break-even</i> rules lift it to the buy price once the trade is up by one stop-distance. It never moves down. Rules with a <i>profit target</i> also sell when the price reaches it.</li>
   <li><b>Checked every 2 hours.</b> In a sudden crash the price can fall past the stop between checks, so the sale can land below it (two test trades sold about 26% down against a 25% stop).</li>
   <li><b>Time limit:</b> if the stop isn't hit, the coin is sold when the rule's holding period ends ({H ? `${H} days for the current rule` : 'set by the rule'}), win or lose.</li>
   <li><b>Size by the stop:</b> each position loses at most about {pct0(S.riskPerTrade)} of the account if its stop is hit. No more than {pct0(S.maxPosition)} in one coin, at most {S.maxOpen} coins at once, at least {pct0(1 - S.maxInvested)} in cash.</li>

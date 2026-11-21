@@ -56,14 +56,24 @@ export function allRules() {
   for (const k of [1.5, 2.5]) for (const regime of ['any', 'quiet']) for (const H of [3, 5, 10]) out.push({ kind: 'dip', k, regime, H })
   for (const regime of ['any', 'quiet']) for (const H of [5, 10, 20]) out.push({ kind: 'surge', regime, H })
   for (const H of [3, 5, 10]) out.push({ kind: 'crash', regime: 'any', H })
+  // other ways out of the same trades (each a new rule, judged by every check like the rest):
+  // trend rules get a trailing stop, a break-even stop and a fixed profit target; dip rules a target
+  for (const n of [20, 55]) for (const regime of ['any', 'loud']) for (const H of [10, 20]) for (const exit of EXITS) out.push({ kind: 'breakout', n, regime, H, exit })
+  for (const k of [1.5, 2.5]) for (const H of [5, 10]) for (const exit of EXITS.filter(x => x.k === 'tp')) out.push({ kind: 'dip', k, regime: 'any', H, exit })
   return out.map(r => ({ ...r, id: ruleId(r) }))
 }
-export const ruleId = r => [r.kind, r.n ?? r.k ?? '', r.regime, 'H' + r.H, ...(r.mkt ? [r.mkt] : [])].join(':')
+/** Exit styles beyond "stop-loss or time limit": trailing stop (m normal daily moves below the
+ *  highest price since buying), break-even (stop moves to the buy price once the trade is up by
+ *  one stop-distance) and take-profit (sell at r times the stop distance above the buy price). */
+export const EXITS = [{ k: 'trail', m: 3 }, { k: 'trail', m: 5 }, { k: 'be' }, { k: 'tp', r: 2 }, { k: 'tp', r: 3 }]
+const exitTag = x => (!x ? [] : [x.k === 'trail' ? `xT${x.m}` : x.k === 'be' ? 'xBE' : `xTP${x.r}`])
+export const ruleId = r => [r.kind, r.n ?? r.k ?? '', r.regime, 'H' + r.H, ...(r.mkt ? [r.mkt] : []), ...exitTag(r.exit)].join(':')
+export const exitText = x => !x ? '' : x.k === 'trail' ? ` Trailing stop: sells if it falls ${x.m} normal daily moves below its highest price since buying.` : x.k === 'be' ? ' Once up by one stop-distance, the stop moves up to the buy price.' : ` Takes profit at ${x.r}× the stop distance above the buy price.`
 
 export function describe(r) {
   if (r.kind === 'combo') return describeCombo(r)
   const reg = r.regime === 'any' ? '' : ` ${REGIMES[r.regime]}`
-  const hold = `Hold up to ${r.H} days, with a stop-loss.`
+  const hold = `Hold up to ${r.H} days, with a stop-loss.${exitText(r.exit)}`
   if (r.kind === 'breakout') return `Buy when a coin closes at a new ${r.n}-day high${reg}. ${hold}`
   if (r.kind === 'dip') return `Buy a ${r.k === 1.5 ? 'sharp' : 'very sharp'} 5-day dip while the coin is above its 100-day average${reg}. ${hold}`
   if (r.kind === 'surge') return `Buy after an unusually strong 20-day rise${reg}. ${hold}`
@@ -246,11 +256,19 @@ export function events(r, data) {
     let busy = 0
     for (let i = 200; i < D - 1; i++) {
       if (i < busy || (data.member && !data.member(coin.base, coin.t[i])) || !signal(r, coin, F, i, data)) continue
-      const entry = coin.o[i + 1], stop = entry * (1 - stopPct(F.dvol[i], r.H, r.stopM))
+      const entry = coin.o[i + 1], sp = stopPct(F.dvol[i], r.H, r.stopM), X = r.exit
+      const target = X?.k === 'tp' ? entry * (1 + X.r * sp) : Infinity
+      let stop = entry * (1 - sp), peak = entry
       let exit = NaN, j = i + 1
       for (; j <= i + r.H && j < D; j++) {
+        // within a bar the stop is assumed to come first (the cautious reading)
         if (coin.l[j] <= stop) { exit = j === i + 1 ? stop : Math.min(coin.o[j], stop); break }
+        if (coin.h[j] >= target) { exit = Math.max(coin.o[j], target); break }
         if (j === i + r.H) { exit = coin.c[j]; break }
+        // after the bar closes, a trailing or break-even stop can move up (never down)
+        peak = Math.max(peak, coin.h[j])
+        if (X?.k === 'trail') stop = Math.max(stop, peak * (1 - X.m * F.dvol[i]))
+        if (X?.k === 'be' && peak >= entry * (1 + sp)) stop = Math.max(stop, entry)
       }
       if (!Number.isFinite(exit)) break       // still open at the end of the data
       const ev = { base: coin.base, m: coin.market || '', t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1 }
@@ -389,7 +407,7 @@ export function coach(state, found, now, S = LAB) {
   for (const f of found) {
     if (!f.pass || state.rules.some(r => r.id === f.id && r.status !== 'retired')) continue
     if (active().filter(r => r.status === 'challenger').length >= S.maxChallengers) break
-    const r = { v: state.nextV++, id: f.id, spec: f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H, ...(f.mkt ? { mkt: f.mkt } : {}) }, text: f.text,
+    const r = { v: state.nextV++, id: f.id, spec: f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H, ...(f.mkt ? { mkt: f.mkt } : {}), ...(f.exit ? { exit: f.exit } : {}) }, text: f.text,
       status: champ ? 'challenger' : 'champion', since: now, train: f.train, valid: f.valid, all: f.all, pass: f.pass, rigor: f.rigor, live: { trades: [] }, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }
     state.rules.push(r)
     if (!champ) { champ = r; r.reason = 'best rule on the back-test'; log('promote', `v${r.v} is the first trading rule: ${r.text} (past signals ${pct(f.all.mean)} a trade before costs, ${f.all.n} trades).`) }
@@ -471,14 +489,23 @@ export function step(state, market, now, S = LAB, opts = {}) {
     for (const pos of a.positions.slice()) {
       const p = price(pos.base); if (!(p > 0)) continue
       const stopped = p <= pos.stop
-      if (!stopped && now < pos.exitT) continue
+      const hitTarget = pos.target > 0 && p >= pos.target
+      if (!stopped && !hitTarget && now < pos.exitT) {
+        // trailing / break-even stops move up as the price rises (checked each run, never down)
+        if (pos.exit) {
+          pos.peak = Math.max(pos.peak || pos.entryPx, p)
+          if (pos.exit.k === 'trail' && pos.dv > 0) pos.stop = Math.max(pos.stop, pos.peak * (1 - pos.exit.m * pos.dv))
+          if (pos.exit.k === 'be' && pos.sp > 0 && pos.peak >= pos.entryPx * (1 + pos.sp)) pos.stop = Math.max(pos.stop, pos.entryPx)
+        }
+        continue
+      }
       const proceeds = pos.units * p * (1 - pos.spread / 2 - S.slippage) * (1 - feeFrac(a, pos.units * p, p, rate))
       const net = proceeds / pos.costUsd - 1
       a.cashAud += proceeds * rate
       a.positions.splice(a.positions.indexOf(pos), 1)
       a.stats.n++; a.stats.sumNet += net; if (net > 0) a.stats.wins++
-      push(a.closed, { ...pos, rMult: pos.stop && pos.entryPx ? +(net / (1 - pos.stop / pos.entryPx)).toFixed(2) : null, expected: ruleByV.get(pos.v)?.norm?.[pos.base]?.m ?? ruleByV.get(pos.v)?.all?.mean ?? null, exitT: now, exitPx: p, net, gross: p / pos.entryPx - 1, why: stopped ? 'stop' : 'time' }, 200)
-      log('trade', `${a.owner}: sold ${pos.base} (${stopped ? 'stop-loss' : 'time up'}) ${pct(net)} after costs.`)
+      push(a.closed, { ...pos, rMult: pos.stop && pos.entryPx ? +(net / (1 - pos.stop / pos.entryPx)).toFixed(2) : null, expected: ruleByV.get(pos.v)?.norm?.[pos.base]?.m ?? ruleByV.get(pos.v)?.all?.mean ?? null, exitT: now, exitPx: p, net, gross: p / pos.entryPx - 1, why: stopped ? 'stop' : hitTarget ? 'target' : 'time' }, 200)
+      log('trade', `${a.owner}: sold ${pos.base} (${stopped ? (pos.exit && pos.stop >= pos.entryPx ? 'trailing / break-even stop' : 'stop-loss') : hitTarget ? 'profit target' : 'time up'}) ${pct(net)} after costs.`)
     }
   }
 
@@ -522,7 +549,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
         if (r !== champ) continue
         for (const a of Object.values(state.accounts)) {
           if (a.market && a.market !== (coin.market || '')) continue
-          enter(a, r, coin.base, p, sp, market, now, S, log, exitT)
+          enter(a, r, coin.base, p, sp, market, now, S, log, exitT, F.dvol[i])
         }
       }
     }
@@ -542,7 +569,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   return state
 }
 
-function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * DAY) {
+function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * DAY, dv = 0) {
   const note = why => { push(a.lastBlocked, { t: now, base, v: r.v, why }, 30) }
   if (a.positions.some(x => x.base === base)) return
   const spread = market.quotes?.[a.id]?.[base]
@@ -569,7 +596,7 @@ function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * 
   const fill = p * (1 + spread / 2 + S.slippage)
   const units = alloc * (1 - fee) / fill
   a.cashAud -= alloc * rate
-  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT, spread, est, cost, estimated, regime, rw })
+  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT, spread, est, cost, estimated, regime, rw, ...(r.spec.exit ? { exit: r.spec.exit, sp, dv, peak: p, target: r.spec.exit.k === 'tp' ? p * (1 + r.spec.exit.r * sp) : null } : {}) })
   log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; estimate ${pct(est)} vs cost ${pct(cost)}${estimated ? `, spread estimated at ${pct(spread)} because ${base} isn't in ${a.exchange}'s public price feed` : ''}).`)
 }
 

@@ -95,7 +95,12 @@ export async function runExecution(deps) {
     // entries: new positions in the lab account
     for (const p of acct.positions) {
       const key = K({ lab: labId, account: acctId, base: p.base, openedAt: p.t, side: 'BUY' })
-      if (byKey.has(key)) continue                                        // handled (filled, rejected or in flight)
+      if (byKey.has(key)) {                                              // handled (filled, rejected or in flight)
+        // a trailing / break-even stop that moved up in the lab: give the watchdog the new stop
+        const prev = byKey.get(key)
+        if (['filled', 'paper_filled'].includes(prev.status) && p.stop > 0 && (!(prev.stop_usd > 0) || p.stop > +prev.stop_usd * 1.0001)) await save({ idem_key: key, stop_usd: +p.stop }, true)
+        continue
+      }
       const r = ruleOf(p.v)
       const proven = !!(r && !r.practice && r.rigor?.passedAll)
       const audAmt = +S.max_order_aud
