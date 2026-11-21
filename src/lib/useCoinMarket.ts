@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadHistory, loadTickers, PERIODS, type Coin, type Period } from './markets'
+import { loadHistory, loadTickers, notACoin, PERIODS, type Coin, type Period } from './markets'
 import { useBroker, useBrokerPrices, useListings } from './brokers'
 import { curSymbol, fxSeries, nowRate, rateAt, useCurrency, type FxSeries } from './currency'
 
@@ -21,6 +21,8 @@ export function useCoinMarket(opts: { keep?: string[]; initialPeriod?: Period; p
   const [minP, setMinP] = useState('')
   const [maxP, setMaxP] = useState('')
   const [showN, setShowN] = useState(opts.pageSize ?? 100)
+  const [coinsOnly, setCoinsOnlyState] = useState(() => { try { return localStorage.getItem('coinsOnly') !== '0' } catch { return true } })
+  const setCoinsOnly = (v: boolean) => { setCoinsOnlyState(v); try { localStorage.setItem('coinsOnly', v ? '1' : '0') } catch { /* */ } }
 
   const currency = useCurrency()
   const { cur, live } = currency
@@ -92,17 +94,19 @@ export function useCoinMarket(opts: { keep?: string[]; initialPeriod?: Period; p
     }
     return all
       .filter(c => c.quoteVolume * (rate ?? 1) >= minVol || keep.includes(c.base))
+      .filter(c => !coinsOnly || !notACoin(c.base) || keep.includes(c.base))
       .filter(c => !term || c.base.includes(term))
       .filter(c => !(onlyBroker && canFilterBroker) || where(c.base).includes(broker.id) || keep.includes(c.base))
       .filter(c => { const pr = priceIn(c); if (pr == null) return true; return (minP === '' || pr >= +minP) && (maxP === '' || pr <= +maxP) })
       .filter(c => trendFilter === 'all' || c.trend === trendFilter)
       .map(c => ({ c, v: val(c) }))
       .sort((a, b) => (a.v == null ? 1 : b.v == null ? -1 : asc ? a.v - b.v : b.v - a.v))
-  }, [all, period, sortBy, asc, minVol, q, trendFilter, keepKey, minP, maxP, cur, rate, fx, quotes, onlyBroker, broker.id, listings]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [all, period, sortBy, asc, minVol, q, trendFilter, keepKey, minP, maxP, cur, rate, fx, quotes, onlyBroker, broker.id, listings, coinsOnly]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     coins, all, rows, error, progress, historyReady,
     period, setPeriod, sortBy, setSortBy, asc, setAsc, minVol, setMinVol, trendFilter, setTrendFilter,
+    coinsOnly, setCoinsOnly, universe: coinsOnly ? all.filter(c => !notACoin(c.base)) : all, hiddenNonCoins: all.filter(c => notACoin(c.base)).length,
     q, setQ, minP, setMinP, maxP, setMaxP, showN, setShowN, onlyBroker, setOnlyBroker, canFilterBroker,
     cur, rate, sym, fx, retIn, priceIn, currency, brokerCtx, brokerPrices, listingsCtx,
   }

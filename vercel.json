@@ -44,6 +44,9 @@
     },
     "api/exec-cron.js": {
       "maxDuration": 120
+    },
+    "api/listings.js": {
+      "maxDuration": 60
     }
   },
   "headers": [

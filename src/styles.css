@@ -288,6 +288,8 @@ tr.hl td { background: var(--accent-soft); }
 .search { flex: 1 1 180px; max-width: 280px; }
 .mini { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
 .mini select { padding: 7px 10px; font-size: 14px; }
+.mini.check { display: flex; align-items: center; gap: 6px; align-self: end; padding-bottom: 8px; cursor: pointer; }
+.mini.check input { width: 16px; height: 16px; margin: 0; }
 @media (max-width: 560px) { .search { max-width: none; } .mini { flex: 1 1 calc(50% - 10px); } }
 
 .mkt { display: grid; }

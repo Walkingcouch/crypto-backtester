@@ -18,7 +18,7 @@ export default function Markets() {
   const [params, setParams] = useSearchParams()
   const selected = useMemo(() => (params.get('compare') || '').split(',').filter(Boolean), [params])
   const M = useCoinMarket({ keep: selected, initialPeriod: (params.get('period') as Period) || '30d' })
-  const { cur, fx, period, coins, all, retIn, historyReady } = M
+  const { cur, fx, period, coins, universe: all, retIn, historyReady } = M
   const { listings, where } = M.listingsCtx
   const [lines, setLines] = useState<CompareLine[] | null>(null)
   const [chartErr, setChartErr] = useState<string | null>(null)

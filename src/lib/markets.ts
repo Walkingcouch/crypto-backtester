@@ -24,6 +24,25 @@ export interface Coin {
 const STABLES = new Set(['USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI', 'USDP', 'USDS', 'USDE', 'USD1', 'XUSD', 'RLUSD', 'EUR', 'EURI', 'AEUR', 'GBP', 'PYUSD', 'USTC', 'UST', 'SUSD', 'BFUSD', 'USDT'])
 const LEVERAGED = /(UP|DOWN|BULL|BEAR)$/
 
+// Things on Binance that trade like coins but aren't: tokenised US shares and ETFs (ticker + "B",
+// e.g. AAPLB, SPYB, SQQQB), gold tokens and dollar-pegged tokens.
+const SHARE_TICKERS = new Set(('AAPL AMZN MSFT GOOGL GOOG META NVDA TSLA AMD AVGO QCOM INTC MU ORCL PLTR CRWV COHR TSM SKHY ' +
+  'NFLX COIN MSTR HOOD GME AMC BABA UBER ABNB SHOP CRM ADBE IBM CSCO DIS JPM BAC GS V MA PYPL SQ XYZ ' +
+  'MRNA PFE LLY JNJ UNH WMT COST KO PEP MCD NKE SBUX BA CAT XOM CVX SPCX CBRS DRAM BE SNOW NOW ARM ' +
+  'SMCI DELL HPE ANET MRVL LRCX AMAT KLAC ASML RDDT RBLX SOFI CRCL BMNR SBET GLXY CRWD PANW NET DDOG ' +
+  'SPY QQQ SQQQ TQQQ SOXS SOXL IWM DIA VOO VTI EWY EWJ EWZ FXI GLD SLV USO TLT ARKK UVXY XLE XLF XLK ' +
+  'IBIT ETHA MAGS').split(' '))
+const GOLD = new Set(['XAUT', 'PAXG', 'KAU', 'KAG', 'XAUM', 'DGX'])
+const PEGGED = new Set(['U', 'RWUSD', 'USDQ', 'USDF', 'USDD', 'FRAX', 'LUSD', 'GHO', 'CUSD', 'EURC', 'EURT', 'XSGD', 'BRL', 'TRY'])
+
+/** null for a real coin, otherwise what it is instead. */
+export function notACoin(base: string): 'share' | 'gold' | 'pegged' | null {
+  if (GOLD.has(base)) return 'gold'
+  if (PEGGED.has(base) || STABLES.has(base)) return 'pegged'
+  if (base.length > 2 && base.endsWith('B') && SHARE_TICKERS.has(base.slice(0, -1))) return 'share'
+  return null
+}
+
 interface Ticker { symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string; count: number; closeTime: number }
 
 export async function loadTickers(): Promise<Coin[]> {
