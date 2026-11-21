@@ -1,12 +1,15 @@
 // Admin controls for the Automation panel: status, kill switch, guardrail settings, and confirming
 // or dismissing Superhero share orders. Requires a signed-in site account whose email is listed in
 // the ADMIN_EMAILS environment variable (comma-separated). If ADMIN_EMAILS isn't set, everything is
-// refused. Live mode can't be switched on from here: only EXECUTION_MODE in Vercel does that.
+// refused. Live mode can only be switched on in Vercel (EXECUTION_MODE, or EXECUTION_MODE_<NAME>).
+// One automation account per person (owners.js): everyone can SEE every account, but every action
+// only touches the signed-in person's own account, keys and orders.
 import { SUPABASE_KEY, SUPABASE_URL } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { paperWallet, spent24h } from './_lib/exec/engine.js'
 import { validateOrder } from './_lib/exec/risk.js'
-import { labState, loadExec, setSettings, store } from './_lib/exec/store.js'
+import { labState, loadAll, setSettingsFor, store } from './_lib/exec/store.js'
+import { envFor, keyPrefix, LEGACY, ownerOf, ownersFrom, settingsFor } from './_lib/exec/owners.js'
 
 const LIMITS = {       // sanity bounds so a typo can't set a $25,000 order
   max_order_aud: [1, 1000], max_daily_spend_aud: [1, 5000], min_wallet_buffer_aud: [0, 100000],
@@ -30,11 +33,12 @@ export default async function handler(req, res) {
   res.setHeader('cache-control', 'no-store')
   const who = await admin(req).catch(() => null)
   if (!who) return res.status(403).json({ error: process.env.ADMIN_EMAILS ? 'Sign in with an admin account to use the automation controls.' : 'Automation controls are locked: ADMIN_EMAILS is not set in Vercel.' })
+  const me = ownerOf(who)                       // every action below touches only this person's account
   try {
     const body = req.method === 'POST' ? (typeof req.body === 'object' && req.body ? req.body : JSON.parse(req.body || '{}')) : {}
     const action = body.action || 'status'
     if (action === 'kill') {
-      return res.status(200).json({ settings: await setSettings({ kill_switch: !!body.on }, who) })
+      return res.status(200).json({ settings: await setSettingsFor(me, { kill_switch: !!body.on }, who) })
     }
     if (action === 'settings') {
       const patch = {}
@@ -48,37 +52,47 @@ export default async function handler(req, res) {
         patch[k] = String(body.patch[k]).slice(0, 40)
       }
       if (body.patch?.require_proven != null) patch.require_proven = !!body.patch.require_proven
-      return res.status(200).json({ settings: await setSettings(patch, who) })
+      return res.status(200).json({ settings: await setSettingsFor(me, patch, who) })
     }
-    const { settings, orders } = await loadExec(body.days || 30)
-    if (action === 'test_roundtrip') return res.status(200).json(await testRoundTrip(settings, orders, who))
-    if (action === 'buy_anyway') return res.status(200).json(await buyAnyway(settings, orders, who, body.idem_key))
+    const all = await loadAll(body.days || 30)
+    if (!all.perUser && me !== LEGACY) return res.status(200).json({ who, me, perUser: false, accounts: [], note: 'Separate automation accounts need migration 0010 in Supabase. Until then only John\'s account exists.' })
+    const mine = all.orders.filter(o => (o.owner || LEGACY) === me), mySettings = settingsFor(all.settings, me)
+    if (action === 'test_roundtrip') return res.status(200).json(await testRoundTrip(me, mySettings, mine, who))
+    if (action === 'buy_anyway') return res.status(200).json(await buyAnyway(me, mySettings, mine, who, body.idem_key))
     if (action === 'mark_executed' || action === 'dismiss') {
-      const o = orders.find(x => x.idem_key === body.idem_key)
-      if (!o || o.venue !== 'superhero' || o.status !== 'pending_manual') return res.status(400).json({ error: 'not a pending share order' })
+      const o = mine.find(x => x.idem_key === body.idem_key)
+      if (!o || o.venue !== 'superhero' || o.status !== 'pending_manual') return res.status(400).json({ error: 'not one of your pending share orders' })
       const row = action === 'dismiss'
         ? { idem_key: o.idem_key, status: 'dismissed', reason: `dismissed by ${who}` }
         : (() => {
-            const price = +body.fill_price, qty = +body.quantity, fee = body.fee_aud != null ? +body.fee_aud : +settings.share_fee_aud
+            const price = +body.fill_price, qty = +body.quantity, fee = body.fee_aud != null ? +body.fee_aud : +mySettings.share_fee_aud
             if (!(price > 0 && qty > 0 && fee >= 0)) throw new Error('fill price and quantity must be above zero')
             return { idem_key: o.idem_key, status: 'executed_manual', filled_rate: price, filled_amount: qty, fee_aud: fee, reason: `confirmed by ${who}` }
           })()
-      await store(orders).put(row, true)
+      await store(mine).put(row, true)
       return res.status(200).json({ ok: true })
     }
-    // status
-    const A = adapters(process.env, settings)
-    const keys = !!(process.env.COINSPOT_API_KEY && process.env.COINSPOT_API_SECRET)
-    let wallet = null, walletError = null
-    try {
-      wallet = A.mode === 'live' ? (keys ? await A.crypto.getWalletBalance() : null) : paperWallet(orders, +(process.env.PAPER_WALLET_AUD || 1000))
-    } catch (e) { walletError = String(e.message || e) }
-    const spent = spent24h(orders, A.mode, Date.now())
-    return res.status(200).json({
-      who, mode: A.mode, keysSet: keys, settings, wallet, walletError,
-      spent24h: +spent.toFixed(2), remaining24h: +Math.max(0, settings.max_daily_spend_aud - spent).toFixed(2),
-      orders, webhook: !!process.env.SHARE_ORDER_WEBHOOK_URL,
-    })
+    // status: every account (read-only for the others), mine first
+    const names = [...new Set([me, LEGACY, ...ownersFrom(process.env).map(o => o.owner), ...all.settings.map(x => x.owner || LEGACY)])]
+      .filter(o => all.perUser || o === LEGACY)
+    const accounts = await Promise.all(names.map(async owner => {
+      const env = envFor(process.env, owner), settings = settingsFor(all.settings, owner)
+      const orders = all.orders.filter(o => (o.owner || LEGACY) === owner)
+      const A = adapters(env, settings)
+      const keys = !!(env.COINSPOT_API_KEY && env.COINSPOT_API_SECRET)
+      let wallet = null, walletError = null
+      try {
+        wallet = A.mode === 'live' ? (keys ? await A.crypto.getWalletBalance() : null) : paperWallet(orders, +(env.PAPER_WALLET_AUD || 1000))
+      } catch (e) { walletError = String(e.message || e) }
+      const spent = spent24h(orders, A.mode, Date.now())
+      return {
+        owner, mine: owner === me, mode: A.mode, keysSet: keys, settings, wallet, walletError,
+        spent24h: +spent.toFixed(2), remaining24h: +Math.max(0, settings.max_daily_spend_aud - spent).toFixed(2),
+        orders, webhook: !!env.SHARE_ORDER_WEBHOOK_URL,
+        envNames: owner === LEGACY ? 'EXECUTION_MODE, COINSPOT_API_KEY, COINSPOT_API_SECRET' : ['EXECUTION_MODE', 'COINSPOT_API_KEY', 'COINSPOT_API_SECRET'].map(n => `${n}_${owner.toUpperCase()}`).join(', '),
+      }
+    }))
+    return res.status(200).json({ who, me, perUser: all.perUser, accounts })
   } catch (e) {
     res.status(500).json({ error: String(e && e.message || e) })
   }
@@ -88,18 +102,19 @@ export default async function handler(req, res) {
 // Proves the whole live path (quote, buy, balance, sell) without waiting for a lab signal. Goes
 // through the same guardrails (kill switch, per-order and daily caps, reserve, slippage) and is
 // written to the same audit log, marked as a manual test.
-async function testRoundTrip(S, orders, who) {
+async function testRoundTrip(owner, S, orders, who) {
   const coin = 'BTC'
-  const A = adapters(process.env, S)
+  const env = envFor(process.env, owner)
+  const A = adapters(env, S)
   const mode = A.mode, crypto = A.crypto, st = store(orders), now = Date.now()
-  const key = `test:manual:${coin}:${now}`
+  const key = `${keyPrefix(owner)}test:manual:${coin}:${now}`
   const audAmt = +S.max_order_aud
   const steps = []
-  const wallet = async () => mode === 'live' ? crypto.getWalletBalance() : paperWallet(orders, +(process.env.PAPER_WALLET_AUD || 1000))
+  const wallet = async () => mode === 'live' ? crypto.getWalletBalance() : paperWallet(orders, +(env.PAPER_WALLET_AUD || 1000))
   const w0 = await wallet()
   const qb = await crypto.getQuote(coin, 'BUY', audAmt)
   const check = validateOrder({ side: 'BUY', aud: audAmt }, { mode, settings: S, now, spent24h: spent24h(orders, mode, now), walletAud: w0.aud, quoteRate: qb.rate, proven: true })
-  const buyRow = { idem_key: `${key}:BUY`, mode, venue: 'coinspot', source: `manual test by ${who}`, side: 'BUY', asset: coin, market: 'CRYPTO', requested_aud: audAmt, signal_price: qb.rate, quote_rate: qb.rate, status: 'intent' }
+  const buyRow = { idem_key: `${key}:BUY`, owner, mode, venue: 'coinspot', source: `manual test by ${who}`, side: 'BUY', asset: coin, market: 'CRYPTO', requested_aud: audAmt, signal_price: qb.rate, quote_rate: qb.rate, status: 'intent' }
   await st.put(buyRow)
   if (!check.ok) { await st.put({ idem_key: buyRow.idem_key, status: 'rejected', reason: check.reason }, true); return { ok: false, mode, steps: [`BUY blocked: ${check.reason}`] } }
   let fb
@@ -115,7 +130,7 @@ async function testRoundTrip(S, orders, who) {
     const gained = (w1.coins[coin] || 0) - (w0.coins[coin] || 0)
     if (gained > 0) amount = amount > 0 ? Math.min(amount, gained) : gained
   }
-  const sellRow = { idem_key: `${key}:SELL`, mode, venue: 'coinspot', source: `manual test by ${who}`, side: 'SELL', asset: coin, market: 'CRYPTO', requested_amount: amount, parent_idem: buyRow.idem_key, status: 'intent' }
+  const sellRow = { idem_key: `${key}:SELL`, owner, mode, venue: 'coinspot', source: `manual test by ${who}`, side: 'SELL', asset: coin, market: 'CRYPTO', requested_amount: amount, parent_idem: buyRow.idem_key, status: 'intent' }
   await st.put(sellRow)
   if (!(amount > 0)) { await st.put({ idem_key: sellRow.idem_key, status: 'failed', reason: 'could not tell how much BTC was bought; sell it in CoinSpot by hand' }, true); return { ok: false, mode, steps: [...steps, 'SELL skipped: bought amount unknown'] } }
   try {
@@ -135,16 +150,17 @@ async function testRoundTrip(S, orders, who) {
 // crypto BUY that was refused, while the lab still holds that position. Bought at today's quote for the
 // per-order amount, still inside the kill switch, per-order and daily caps and the wallet reserve.
 // The row keeps the lab's key, so the normal job sells exactly this amount when the lab closes it.
-async function buyAnyway(S, orders, who, key) {
+async function buyAnyway(owner, S, orders, who, key) {
   const o = orders.find(x => x.idem_key === key)
-  const A = adapters(process.env, S)
+  const env = envFor(process.env, owner)
+  const A = adapters(env, S)
   if (!o || o.venue !== 'coinspot' || o.side !== 'BUY' || o.status !== 'rejected') return { ok: false, error: 'only a blocked crypto buy can be overridden' }
   if (o.mode !== A.mode) return { ok: false, error: `that signal was handled in ${o.mode} mode; the bot is now in ${A.mode} mode` }
-  const [lab, acct, base, openedAt] = key.split(':')
+  const [lab, acct, base, openedAt] = key.slice(keyPrefix(owner).length).split(':')
   const L = await labState(lab)
   if (!L?.accounts?.[acct]?.positions?.some(p => p.base === base && String(p.t) === openedAt)) return { ok: false, error: `the lab has already sold ${base}, so there's nothing to follow` }
   const now = Date.now(), audAmt = +S.max_order_aud
-  const w = A.mode === 'live' ? await A.crypto.getWalletBalance() : paperWallet(orders, +(process.env.PAPER_WALLET_AUD || 1000))
+  const w = A.mode === 'live' ? await A.crypto.getWalletBalance() : paperWallet(orders, +(env.PAPER_WALLET_AUD || 1000))
   const q = await A.crypto.getQuote(base, 'BUY', audAmt)
   const check = validateOrder({ side: 'BUY', aud: audAmt }, { mode: A.mode, settings: S, now, spent24h: spent24h(orders, A.mode, now), walletAud: w.aud, quoteRate: q.rate, proven: true })
   if (!check.ok) return { ok: false, error: check.reason }

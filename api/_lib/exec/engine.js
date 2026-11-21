@@ -6,6 +6,7 @@
 // idempotency key, so a retry or a second run can never place the same order twice.
 // Shares (Superhero): new positions in the chosen share lab → pending orders for you to place by hand.
 import { idemKey, validateOrder } from './risk.js'
+import { keyPrefix } from './owners.js'
 
 const DAY = 86_400_000
 const LIVE_STATUSES = ['submitted', 'filled', 'paper_filled']
@@ -37,11 +38,14 @@ export function paperWallet(orders, startAud) {
  */
 export async function runExecution(deps) {
   const { mode, settings: S, store, crypto, shares, now = Date.now() } = deps
+  // each person's orders are keyed under their own name (John's keep the original, unprefixed keys)
+  const owner = deps.owner || 'john', pfx = keyPrefix(owner)
+  const K = x => pfx + idemKey(x)
   const orders = store.orders
   const byKey = new Map(orders.map(o => [o.idem_key, o]))
   const log = []
   const save = async (row, update = false) => {
-    const res = await store.put(row, update)
+    const res = await store.put(update ? row : { owner, ...row }, update)
     if (res === 'duplicate') return res
     const prev = byKey.get(row.idem_key)
     if (prev) Object.assign(prev, row)            // update in place so totals in this run stay correct
@@ -60,10 +64,10 @@ export async function runExecution(deps) {
     const getWallet = async () => (wallet ||= await crypto.getWalletBalance(mode === 'paper' ? paperWallet(orders, deps.paperStartAud ?? 1000) : undefined))
     // exits first: sell what the bot bought for positions the lab has closed
     const open = new Set(acct.positions.map(p => `${p.base}:${p.t}`))
-    for (const buy of orders.filter(o => o.venue === 'coinspot' && o.mode === mode && o.side === 'BUY' && ['filled', 'paper_filled'].includes(o.status) && o.idem_key.startsWith(`${labId}:${acctId}:`))) {
+    for (const buy of orders.filter(o => o.venue === 'coinspot' && o.mode === mode && o.side === 'BUY' && ['filled', 'paper_filled'].includes(o.status) && o.idem_key.startsWith(`${pfx}${labId}:${acctId}:`))) {
       const [, , base, openedAt] = buy.idem_key.split(':')
       if (open.has(`${base}:${openedAt}`)) continue
-      const key = idemKey({ lab: labId, account: acctId, base, openedAt, side: 'SELL' })
+      const key = K({ lab: labId, account: acctId, base, openedAt, side: 'SELL' })
       const prev = byKey.get(key)
       if (prev && !['rejected', 'failed', 'intent'].includes(prev.status)) continue          // done already
       const closed = (acct.closed || []).find(c => c.base === base && String(c.t) === openedAt)
@@ -90,7 +94,7 @@ export async function runExecution(deps) {
     }
     // entries: new positions in the lab account
     for (const p of acct.positions) {
-      const key = idemKey({ lab: labId, account: acctId, base: p.base, openedAt: p.t, side: 'BUY' })
+      const key = K({ lab: labId, account: acctId, base: p.base, openedAt: p.t, side: 'BUY' })
       if (byKey.has(key)) continue                                        // handled (filled, rejected or in flight)
       const r = ruleOf(p.v)
       const proven = !!(r && !r.practice && r.rigor?.passedAll)
@@ -121,7 +125,7 @@ export async function runExecution(deps) {
     for (const [aid, a] of Object.entries(sl.accounts)) {
       const live = new Set(a.positions.map(p => `${p.base}:${p.t}`))
       for (const p of a.positions) {
-        const key = idemKey({ lab: sLab, account: aid, base: p.base, openedAt: p.t, side: 'BUY' })
+        const key = K({ lab: sLab, account: aid, base: p.base, openedAt: p.t, side: 'BUY' })
         if (byKey.has(key)) continue
         const r = (sl.rules || []).find(x => x.v === p.v)
         const market = a.market || (p.base.endsWith('.AX') ? 'ASX' : 'US')
@@ -132,12 +136,12 @@ export async function runExecution(deps) {
         await save({ idem_key: key, status: f.status, raw: f.raw }, true); log.push(`share BUY ${row.asset} queued`)
       }
       // exits: queue a sell for shares you confirmed buying; expire buys you never placed
-      for (const o of orders.filter(x => x.venue === 'superhero' && x.side === 'BUY' && x.idem_key.startsWith(`${sLab}:${aid}:`))) {
+      for (const o of orders.filter(x => x.venue === 'superhero' && x.side === 'BUY' && x.idem_key.startsWith(`${pfx}${sLab}:${aid}:`))) {
         const [, , base, openedAt] = o.idem_key.split(':')
         if (live.has(`${base}:${openedAt}`)) continue
         if (o.status === 'pending_manual') { await save({ idem_key: o.idem_key, status: 'dismissed', reason: 'the lab closed this position before it was placed' }, true); continue }
         if (o.status !== 'executed_manual') continue
-        const key = idemKey({ lab: sLab, account: aid, base, openedAt, side: 'SELL' })
+        const key = K({ lab: sLab, account: aid, base, openedAt, side: 'SELL' })
         if (byKey.has(key)) continue
         const closed = (a.closed || []).find(c => c.base === base && String(c.t) === openedAt)
         const row = { idem_key: key, mode, venue: 'superhero', source: o.source, side: 'SELL', asset: o.asset, market: o.market, requested_amount: o.filled_amount, signal_price: closed?.exitPx ?? null, parent_idem: o.idem_key, status: 'intent' }

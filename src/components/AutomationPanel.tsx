@@ -14,9 +14,12 @@ interface Order {
   filled_amount: number | null; fee_aud: number | null; status: string; reason: string | null; raw: unknown
 }
 interface Status {
-  who: string; mode: 'paper' | 'live'; keysSet: boolean; settings: Settings; wallet: { aud: number; coins: Record<string, number> } | null; walletError: string | null
+  owner: string; mine: boolean; envNames: string
+  mode: 'paper' | 'live'; keysSet: boolean; settings: Settings; wallet: { aud: number; coins: Record<string, number> } | null; walletError: string | null
   spent24h: number; remaining24h: number; orders: Order[]; webhook: boolean
 }
+interface AllStatus { who: string; me: string; perUser: boolean; accounts: Status[]; note?: string }
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 const aud = (x: number | null | undefined) => x == null ? '–' : `A$${(+x).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 const num = (x: number | null | undefined, d = 6) => x == null ? '–' : (+x).toLocaleString('en-AU', { maximumFractionDigits: d })
@@ -41,7 +44,8 @@ const FIELDS: [keyof Settings, string, string][] = [
 
 export default function AutomationPanel() {
   const { session, ready } = useAuth()
-  const [st, setSt] = useState<Status | null>(null)
+  const [all, setAll] = useState<AllStatus | null>(null)
+  const [sel, setSel] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState<Partial<Settings>>({})
@@ -59,14 +63,17 @@ export default function AutomationPanel() {
     if (!r.ok) throw new Error(j.error || `error ${r.status}`)
     return j
   }, [session])
-  const load = useCallback(async () => { try { setSt(await call()); setError('') } catch (e) { setError(String((e as Error).message)) } }, [call])
+  const load = useCallback(async () => { try { setAll(await call()); setError('') } catch (e) { setError(String((e as Error).message)) } }, [call])
   useEffect(() => { if (session) load() }, [session, load])
   const act = async (body: object) => { setBusy(true); try { await call(body); await load() } catch (e) { setError(String((e as Error).message)) } finally { setBusy(false) } }
 
   if (!ready) return null
   if (!session) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">Sign in with an admin account to see wallet balances, orders and the kill switch. <Link to="/account">Sign in</Link></p></section>
-  if (error && !st) return <section className="card"><h2>Execution &amp; guardrails</h2><div className="notice err">{error}</div></section>
-  if (!st) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">Loading…</p></section>
+  if (error && !all) return <section className="card"><h2>Execution &amp; guardrails</h2><div className="notice err">{error}</div></section>
+  if (!all) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">Loading…</p></section>
+  if (!all.accounts.length) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">{all.note}</p></section>
+  const st = all.accounts.find(a => a.owner === (sel || all.me)) || all.accounts[0]
+  const can = st.mine            // only your own account has working controls; the others are view-only
 
   const S = st.settings
   const crypto = st.orders.filter(o => o.venue === 'coinspot')
@@ -77,21 +84,29 @@ export default function AutomationPanel() {
 
   return (
     <>
+      {all.accounts.length > 1 && (
+        <div className="lab-tabs" style={{ marginBottom: 10 }}>
+          {all.accounts.map(a => <button key={a.owner} className={a.owner === st.owner ? 'active' : ''} onClick={() => { setSel(a.owner); setEdit({}); setArm(''); setTest({ armed: false, result: '' }) }}>
+            {a.mine ? `My automation (${cap(a.owner)})` : `${cap(a.owner)} · view only`}{a.mode === 'live' ? ' · LIVE' : ''}{a.settings.kill_switch ? ' · stopped' : ''}</button>)}
+        </div>
+      )}
+      {!all.perUser && <div className="notice info small">Separate accounts for each person need migration 0010 in Supabase. Until it's run, this is John's account only.</div>}
       <section className="card">
         <div className="step-head" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0 }}>Execution &amp; guardrails</h2>
+          <h2 style={{ margin: 0 }}>{can ? 'Execution & guardrails' : `${cap(st.owner)}'s automation`}</h2>
           <span className={`tag ${st.mode === 'live' ? 'red' : 'green'}`} style={{ fontSize: 13 }}>{st.mode === 'live' ? 'LIVE · real money' : 'PAPER · simulated'}</span>
           {S.kill_switch && <span className="tag red" style={{ fontSize: 13 }}>KILL SWITCH ON</span>}
         </div>
         {error && <div className="notice err small">{error}</div>}
-        <button
+        {!can && <p className="small muted" style={{ margin: '8px 0' }}>View only: {cap(st.owner)} controls this account with their own CoinSpot keys and settings. Your controls are on your own tab.</p>}
+        {can && <button
           className="btn btn-block" disabled={busy}
           style={{ margin: '12px 0', padding: '14px', fontSize: 16, fontWeight: 700, background: S.kill_switch ? 'var(--surface-2)' : 'var(--neg)', color: S.kill_switch ? 'var(--text)' : '#fff' }}
           onClick={() => act({ action: 'kill', on: !S.kill_switch })}
-        >{S.kill_switch ? 'Kill switch is ON: tap to resume trading' : 'KILL SWITCH: stop all orders now'}</button>
+        >{S.kill_switch ? 'Kill switch is ON: tap to resume trading' : 'KILL SWITCH: stop all orders now'}</button>}
         <div className="kpis">
           <div className="kpi"><div className="label">CoinSpot AUD {st.mode === 'paper' ? '(simulated)' : 'available'}</div><div className="value">{st.wallet ? aud(st.wallet.aud) : '–'}</div>
-            <div className="sub">{st.walletError ? <span className="neg">{st.walletError}</span> : st.mode === 'live' && !st.keysSet ? 'API keys not set' : `reserve ${aud(S.min_wallet_buffer_aud)} never used`}</div></div>
+            <div className="sub">{st.walletError ? <span className="neg">{st.walletError}</span> : st.mode === 'live' && !st.keysSet ? `API keys not set (${st.envNames})` : `reserve ${aud(S.min_wallet_buffer_aud)} never used`}</div></div>
           <div className="kpi"><div className="label">Spent in the last 24 h</div><div className="value">{aud(st.spent24h)}</div>
             <div className="sub">{aud(st.remaining24h)} left of {aud(S.max_daily_spend_aud)}</div>
             <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, marginTop: 6 }}><div style={{ width: `${spentPct}%`, height: 6, borderRadius: 3, background: spentPct >= 100 ? 'var(--neg)' : 'var(--accent)' }} /></div></div>
@@ -101,9 +116,9 @@ export default function AutomationPanel() {
           Mirrors <b>{S.crypto_source_lab}</b> lab account <b>{S.crypto_source_account}</b>.{' '}
           {S.require_proven ? 'In live mode only rules that passed every professional check are mirrored.' : <span className="neg">Live mode will mirror unproven rules too.</span>}{' '}
           The bot never moves money in or out of CoinSpot: it can only buy and sell with what's already in the wallet.
-          {st.mode === 'paper' && ' Switching to live is done only in Vercel (EXECUTION_MODE=live), never from this page.'}
+          {st.mode === 'paper' && ` Switching to live is done only in Vercel (${st.envNames.split(', ')[0]}=live, with ${st.envNames.split(', ').slice(1).join(' and ')} set), never from this page.`}
         </p>
-        <div className="small" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 12px' }}>
+        {can && <div className="small" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 12px' }}>
           {!test.armed
             ? <button className="btn btn-ghost btn-sm" disabled={busy || S.kill_switch} onClick={() => setTest({ armed: true, result: '' })}>Test order: buy and sell {aud(S.max_order_aud)} of BTC</button>
             : <>
@@ -116,24 +131,24 @@ export default function AutomationPanel() {
                 <button className="btn btn-ghost btn-sm" onClick={() => setTest({ armed: false, result: '' })}>Cancel</button>
               </>}
           {test.result && <span className="muted">{test.result}</span>}
-        </div>
-        <Disclosure title="Guardrail settings">
+        </div>}
+        <Disclosure key={st.owner} title={can ? 'Guardrail settings' : `${cap(st.owner)}'s guardrail settings`}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
             {FIELDS.map(([k, label, help]) => (
               <label key={k} className="small">{label} <Info>{help}</Info>
-                <input className="input" type="number" step="any" defaultValue={String(S[k])} onChange={e => setEdit(x => ({ ...x, [k]: e.target.value }))} style={{ width: '100%' }} /></label>
+                <input className="input" type="number" step="any" disabled={!can} defaultValue={String(S[k])} onChange={e => setEdit(x => ({ ...x, [k]: e.target.value }))} style={{ width: '100%' }} /></label>
             ))}
             <label className="small">Crypto lab to mirror
-              <select className="input" defaultValue={S.crypto_source_lab} onChange={e => setEdit(x => ({ ...x, crypto_source_lab: e.target.value }))} style={{ width: '100%' }}>
+              <select className="input" disabled={!can} defaultValue={S.crypto_source_lab} onChange={e => setEdit(x => ({ ...x, crypto_source_lab: e.target.value }))} style={{ width: '100%' }}>
                 <option value="daytrade">Crypto day</option><option value="main">Crypto swing</option><option value="explorer">Crypto Explorer</option></select></label>
             <label className="small">Share lab to queue
-              <select className="input" defaultValue={S.share_source_lab} onChange={e => setEdit(x => ({ ...x, share_source_lab: e.target.value }))} style={{ width: '100%' }}>
+              <select className="input" disabled={!can} defaultValue={S.share_source_lab} onChange={e => setEdit(x => ({ ...x, share_source_lab: e.target.value }))} style={{ width: '100%' }}>
                 <option value="stocks">Shares swing</option><option value="stocks-explore">Shares Explorer</option><option value="stocks-day">Shares day</option></select></label>
             <label className="small" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="checkbox" defaultChecked={S.require_proven} onChange={e => setEdit(x => ({ ...x, require_proven: e.target.checked }))} /> Live: proven rules only</label>
+              <input type="checkbox" disabled={!can} defaultChecked={S.require_proven} onChange={e => setEdit(x => ({ ...x, require_proven: e.target.checked }))} /> Live: proven rules only</label>
           </div>
-          <button className="btn btn-primary btn-sm" disabled={busy || !Object.keys(edit).length} style={{ marginTop: 10 }} onClick={() => act({ action: 'settings', patch: edit }).then(() => setEdit({}))}>Save settings</button>
-          <p className="muted small">Last changed {new Date(S.updated_at).toLocaleString('en-AU', { timeZone: 'Australia/Darwin' })}{S.updated_by ? ` by ${S.updated_by}` : ''}.</p>
+          {can && <button className="btn btn-primary btn-sm" disabled={busy || !Object.keys(edit).length} style={{ marginTop: 10 }} onClick={() => act({ action: 'settings', patch: edit }).then(() => setEdit({}))}>Save settings</button>}
+          <p className="muted small">{S.updated_at ? <>Last changed {new Date(S.updated_at).toLocaleString('en-AU', { timeZone: 'Australia/Darwin' })}{S.updated_by ? ` by ${S.updated_by}` : ''}.</> : 'Using the default settings until they are first saved.'}</p>
         </Disclosure>
       </section>
 
@@ -149,11 +164,13 @@ export default function AutomationPanel() {
               <div className="muted small">{o.source} · {when(o.created_at)}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                 <button className="btn btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(copyText(o))}>Copy order</button>
+                {can && <>
                 <input className="input" placeholder="Fill price" value={f.price} onChange={e => setF('price', e.target.value)} style={{ width: 100 }} />
                 <input className="input" placeholder="Quantity" value={f.qty} onChange={e => setF('qty', e.target.value)} style={{ width: 90 }} />
                 <input className="input" placeholder="Fee A$" value={f.fee} onChange={e => setF('fee', e.target.value)} style={{ width: 70 }} />
                 <button className="btn btn-primary btn-sm" disabled={busy || !f.price || !f.qty} onClick={() => act({ action: 'mark_executed', idem_key: o.idem_key, fill_price: f.price, quantity: f.qty, fee_aud: f.fee })}>Mark executed in Superhero</button>
                 <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => act({ action: 'dismiss', idem_key: o.idem_key })}>Dismiss</button>
+                </>}
               </div>
             </div>
           )
@@ -176,7 +193,7 @@ export default function AutomationPanel() {
                 <td className="small">{o.requested_aud != null ? aud(o.requested_aud) : ''}{o.filled_amount != null ? <div className="muted">{num(o.filled_amount, 8)} units</div> : null}</td>
                 <td className="small">{aud(o.fee_aud)}</td>
                 <td><span className={`tag ${color}`}>{label}</span>{o.reason && <div className="small muted" style={{ maxWidth: 260, whiteSpace: 'normal' }}>{o.reason}</div>}
-                  {o.status === 'rejected' && o.side === 'BUY' && o.venue === 'coinspot' && o.mode === st.mode && !String(o.idem_key).startsWith('test:') && Date.now() - Date.parse(o.created_at) < 86_400_000 && (
+                  {can && o.status === 'rejected' && o.side === 'BUY' && o.venue === 'coinspot' && o.mode === st.mode && !String(o.idem_key).includes('test:manual') && Date.now() - Date.parse(o.created_at) < 86_400_000 && (
                     arm === o.idem_key
                       ? <div style={{ marginTop: 4 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { const r = await call({ action: 'buy_anyway', idem_key: o.idem_key }); setArm(''); if (!r.ok) setError(r.error); await load() } catch (e) { setError(String((e as Error).message)) } finally { setBusy(false) } }}>Confirm {st.mode === 'live' ? 'real ' : ''}buy {aud(S.max_order_aud)}</button> <button className="btn btn-ghost btn-sm" onClick={() => setArm('')}>Cancel</button></div>
                       : <div style={{ marginTop: 4 }}><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setArm(o.idem_key)}>Buy anyway</button></div>)}

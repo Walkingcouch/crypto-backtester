@@ -146,3 +146,32 @@ test('live fill reports CoinSpot\'s 1% instant fee', async () => {
   const f = await a.placeOrder({ coin: 'BTC', side: 'BUY', aud: 10, rate: 88811.85, thresholdPct: 1 })
   assert.ok(Math.abs(f.feeAud - 0.099) < 0.001)
 })
+
+// ---------- one account per person
+import { envFor, ownerOf, ownersFrom, keyPrefix, settingsFor } from '../api/_lib/exec/owners.js'
+test('each person gets only their own keys and mode; nobody else falls back to John\'s', () => {
+  const env = { COINSPOT_API_KEY: 'JK', COINSPOT_API_SECRET: 'JS', EXECUTION_MODE: 'live', COINSPOT_API_KEY_MARK: 'MK', COINSPOT_API_SECRET_MARK: 'MS' }
+  assert.equal(envFor(env, 'john').COINSPOT_API_KEY, 'JK')
+  assert.equal(envFor(env, 'john').EXECUTION_MODE, 'live')
+  assert.equal(envFor(env, 'mark').COINSPOT_API_KEY, 'MK')
+  assert.equal(envFor(env, 'mark').EXECUTION_MODE, undefined)            // → paper
+  assert.equal(executionMode(envFor(env, 'mark')), 'paper')
+  assert.equal(envFor({ COINSPOT_API_KEY: 'JK' }, 'mark').COINSPOT_API_KEY, undefined)
+})
+test('owners come from ADMIN_EMAILS by first name', () => {
+  assert.equal(ownerOf('john.ahchee@gmail.com'), 'john')
+  assert.equal(ownerOf('mark.a.mclean@live.com.au'), 'mark')
+  assert.deepEqual(ownersFrom({ ADMIN_EMAILS: 'john.ahchee@gmail.com, mark.a.mclean@live.com.au' }).map(o => o.owner), ['john', 'mark'])
+  assert.equal(keyPrefix('john'), ''); assert.equal(keyPrefix('mark'), 'mark~')
+  assert.equal(settingsFor([], 'mark').max_order_aud, 25)
+})
+test('two people mirroring the same lab trade get separate orders, each tagged with its owner', async () => {
+  const lab = { audPerUsd: 1.5, rules: [{ v: 1, id: 'r', rigor: { passedAll: true } }], accounts: { john: { positions: [{ base: 'SOL', t: NOW - 60_000, entryPx: 100, v: 1 }], closed: [] } } }
+  const S = { ...ctx().settings, crypto_source_lab: 'daytrade', crypto_source_account: 'john' }
+  const john = fakeStore(), mark = fakeStore()
+  for (const [owner, st] of [['john', john], ['mark', mark]]) await runExecution({ owner, mode: 'paper', settings: S, store: st, crypto: fakeCrypto(), shares: null, cryptoLab: lab, shareLab: null, now: NOW })
+  const jk = [...john.rows.keys()], mk = [...mark.rows.keys()]
+  assert.equal(jk.length, 1); assert.equal(mk.length, 1)
+  assert.ok(!jk[0].includes('~')); assert.ok(mk[0].startsWith('mark~daytrade:john:SOL:'))
+  assert.equal(mark.rows.get(mk[0]).owner, 'mark')
+})

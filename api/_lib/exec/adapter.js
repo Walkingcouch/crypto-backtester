@@ -16,6 +16,7 @@ import { SuperheroAdapter } from './superhero.js'
 /** Mode comes only from the server environment: the website can never switch to live. */
 export const executionMode = env => (env.EXECUTION_MODE === 'live' ? 'live' : 'paper')
 
+/** env: one owner's environment (owners.js envFor), never the whole server environment for anyone but John. */
 export function adapters(env, settings = {}) {
   const mode = executionMode(env)
   return {
