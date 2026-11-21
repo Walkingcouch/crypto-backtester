@@ -18,19 +18,19 @@ export interface Broker {
 
 export const BROKERS: Broker[] = [
   { id: 'coinspot', name: 'CoinSpot', site: 'https://www.coinspot.com.au', livePrices: true,
-    fees: [{ label: 'Market / limit order', fee: 0.1 }, { label: 'Instant buy / sell', fee: 1.0, note: 'The quick "Buy" button' }] },
+    fees: [{ label: 'Instant buy / sell', fee: 1.0, note: 'Every coin; what the live bot uses. Plus about a 1% buy–sell gap (measured Nov 2026)' }, { label: 'Markets (order book)', fee: 0.1, note: 'Only coins with a CoinSpot order book' }] },
   { id: 'swyftx', name: 'Swyftx', site: 'https://swyftx.com',
     fees: [{ label: 'Standard trade', fee: 0.6 }] },
   { id: 'independentreserve', name: 'Independent Reserve', site: 'https://www.independentreserve.com',
-    fees: [{ label: 'Standard trade', fee: 0.5 }] },
+    fees: [{ label: 'Standard trade', fee: 0.5, note: 'Lowest volume tier (checked Nov 2026)' }] },
   { id: 'btcmarkets', name: 'BTC Markets', site: 'https://www.btcmarkets.net',
     fees: [{ label: 'AUD markets', fee: 0.85, note: 'Lowest volume tier' }] },
   { id: 'kraken', name: 'Kraken Pro', site: 'https://pro.kraken.com',
     fees: [{ label: 'Market order (taker)', fee: 0.8, note: 'Lowest volume tier (checked Nov 2026)' }, { label: 'Limit order (maker)', fee: 0.4, note: 'Lowest volume tier' }] },
   { id: 'coinbase', name: 'Coinbase Advanced', site: 'https://www.coinbase.com/advanced-trade',
-    fees: [{ label: 'Market order (taker)', fee: 0.6, note: 'Lowest volume tier (checked Nov 2026); check your account' }, { label: 'Limit order (maker)', fee: 0.4, note: 'Lowest volume tier' }] },
+    fees: [{ label: 'Market order (taker)', fee: 0.6, note: 'Fees were cut and made regional in Sep 2026; the under-US$10k tier for Australia isn\'t published, so check your account' }, { label: 'Limit order (maker)', fee: 0.4, note: 'Check your account' }] },
   { id: 'binance', name: 'Binance', site: 'https://www.binance.com',
-    fees: [{ label: 'Spot order', fee: 0.1 }] },
+    fees: [{ label: 'Spot order', fee: 0.1, note: 'Regular user, maker and taker (checked Nov 2026)' }, { label: 'Spot order, fees paid in BNB', fee: 0.075, note: '25% off when you hold BNB for fees' }] },
   { id: 'other', name: 'Other / custom', site: '',
     fees: [{ label: 'Exchange order', fee: 0.1 }, { label: 'App instant buy', fee: 1.0 }] },
 ]

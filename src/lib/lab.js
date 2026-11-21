@@ -39,8 +39,8 @@ export const LAB = {
 
 export const ACCOUNTS = [
   { id: 'john', owner: 'CoinSpot', broker: 'coinspot', exchange: 'CoinSpot', fee: 0.01, feeLabel: '1% instant buy/sell (every coin; what the live bot pays)', startAud: 1000 },
-  { id: 'mark', owner: 'Coinbase', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.006, feeLabel: '0.6% taker (lowest tier)', startAud: 1000 },
-  { id: 'binance', owner: 'Binance', broker: 'binance', exchange: 'Binance', fee: 0.001, feeLabel: '0.1% spot', startAud: 1000 },
+  { id: 'mark', owner: 'Coinbase', broker: 'coinbase', exchange: 'Coinbase Advanced', fee: 0.006, feeLabel: 'about 0.6% taker (regional since Sep 2026; check your account)', startAud: 1000 },
+  { id: 'binance', owner: 'Binance', broker: 'binance', exchange: 'Binance', fee: 0.001, feeLabel: '0.1% spot (0.075% paying fees in BNB)', startAud: 1000 },
 ]
 const freshAccount = (a, audPerUsd) => ({
   ...a, startUsd: a.startAud / audPerUsd, cashAud: a.startAud, positions: [], closed: [],
