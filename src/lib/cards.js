@@ -19,6 +19,7 @@ export const CARDS = {
   imom: { edge: 'The day\'s early move predicts its last hours as slower traders and hedgers act late (documented on SPY).', fails: 'Quiet days with no early move, and any market where costs exceed the small late-day move.' },
   rev: { edge: 'An unusually hard 1-hour fall is often forced selling that partly reverses.', fails: 'News-driven falls, and market-wide sell-offs where everything keeps dropping.' },
   orb: { edge: 'A break of the opening range shows the day\'s direction has been chosen.', fails: 'Range-bound days: false breakouts reverse. Usually needs finer bars than hourly.' },
+  jump: { edge: 'Coins on the "recent movers" list can keep going for a while as late buyers pile in.', fails: 'Most of the move is usually over by the time it shows; big hourly jumps in crypto often partly reverse, and costs on small coins are high.' },
   volbo: { edge: 'Calm is followed by expansion: a big move off the open often continues for the day.', fails: 'Choppy markets with many false starts; costs per trade are high relative to the move.' },
   mr: { edge: 'In calm markets, sharp dips below the 24-hour average tend to snap back.', fails: 'When calm turns to trend: the dip is the start of a bigger move.' },
   gap: { edge: 'Large opening gaps down often partly fill as overnight panic fades.', fails: 'Gaps caused by real news (earnings, downgrades), which keep going.' },

@@ -56,6 +56,8 @@ export function allDayRules() {
     for (const n of [2, 4]) out.push({ kind: 'orb', n, tf })
     for (const K of [0.3, 0.5, 0.7]) out.push({ kind: 'volbo', K, tf })
     for (const z of [1.5, 2.5]) for (const H of [4, 8]) out.push({ kind: 'mr', z, H, tf })
+    // 'Recent movers': buy a coin right after an unusually big 1-hour jump (what CoinSpot's movers list shows)
+    for (const k of [2, 3]) for (const H of [1, 2, 4, 8]) out.push({ kind: 'jump', k, H, tf })
   }
   return out.map(r => ({ ...r, id: dayRuleId(r) }))
 }
@@ -68,6 +70,7 @@ export function describeDay(r) {
     case 'rev': return `Buy after an unusually hard 1-hour fall (${r.k}× the usual move) and hold up to ${r.H} hours${tf}.`
     case 'orb': return `Buy when price clears the high of the day's first ${r.n} hours; sell by day's end${tf}.`
     case 'volbo': return `Buy when price rises ${r.K} × yesterday's range above today's open; sell by day's end${tf}.`
+    case 'jump': return `Recent mover: buy right after an unusually big 1-hour jump (${r.k}× the usual move) and hold up to ${r.H} hour${r.H > 1 ? 's' : ''}${tf}.`
     case 'mr': return `In calm markets, buy a ${r.z === 1.5 ? 'sharp' : 'very sharp'} dip below the 24-hour average; sell on recovery or after ${r.H} hours${tf}.`
     default: return r.kind
   }
@@ -117,6 +120,7 @@ export function daySignal(r, coin, D, i) {
       return c[d + r.n - 1] / coin.o[d] - 1 > 0
     }
     case 'rev': return hr <= 22 && Number.isFinite(D.hvol[i - 1]) && D.lr[i] < -r.k * D.hvol[i - 1]
+    case 'jump': return hr <= 22 && Number.isFinite(D.hvol[i - 1]) && D.lr[i] > r.k * D.hvol[i - 1]
     case 'orb': {
       if (hr < r.n || hr > 21 || d + r.n - 1 >= i) return false
       let hi = -Infinity
@@ -137,7 +141,7 @@ export function daySignal(r, coin, D, i) {
 export function holdHours(r, entryHour) {
   const toEod = 24 - entryHour
   if (r.kind === 'imom') return Math.min(r.last, toEod)
-  if (r.kind === 'rev' || r.kind === 'mr') return Math.min(r.H, toEod)
+  if (r.kind === 'rev' || r.kind === 'mr' || r.kind === 'jump') return Math.min(r.H, toEod)
   return toEod
 }
 export const dayStopPct = (hvol, hours) => Math.max(0.008, Math.min(0.05, 2 * hvol * Math.sqrt(Math.max(1, hours))))

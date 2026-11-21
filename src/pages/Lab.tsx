@@ -138,7 +138,7 @@ const VARIANTS: Record<Variant['key'], Omit<Variant, 'stops'> & { stops: (S: Set
   day: {
     key: 'day', kind: 'day', family: 'crypto', sid: 'daytrade', api: '/api/daytrade-cron?dry=1', S: DT as unknown as Settings, title: 'Day trading', unit: 'hours', every: 'every hour',
     intro: <>Tests day-trading rules from published research on 1-hour candles, and closes every position by the end of the day (00:00 UTC, 9:30am Darwin). Same honest loop as the main Lab, plus a walk-forward test and a daily loss limit. Expect most rules to fail once costs are counted.</>,
-    howto: [['Five research-backed families', "Intraday momentum, overreaction reversal, opening-range breakout, volatility breakout and calm-market mean reversion, each with and without a daily-trend filter (42 rules)."],
+    howto: [['Six families of ideas', "Intraday momentum, overreaction reversal, opening-range breakout, volatility breakout, calm-market mean reversion and 'recent movers' (buying right after a big 1-hour jump), each with and without a daily-trend filter (58 rules)."],
       ['Costs decide everything', 'A day trade must beat a full buy and sell. On Coinbase at 0.6% each way that is 1.2%+ a trade, so its account will rarely trade.'],
       ['Tight limits', `Stops on every trade, at most ${(DT.riskPerTrade * 100).toFixed(1)}% of the account at risk per trade, and no new trades for the rest of the day after a ${pct0(DT.dailyLossLimit)} drop.`]],
     noRule: 'No day-trading rule passed both checks after costs. That is the most common honest result: most published intraday edges are smaller than the cost of trading them.',
