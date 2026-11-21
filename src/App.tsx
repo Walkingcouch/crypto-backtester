@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes, Link, Navigate } from 'react-router-dom'
+import { NavLink, Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
 import Brief from './pages/Brief'
 import Guide from './pages/Guide'
 import History from './pages/History'
@@ -13,6 +13,8 @@ import { cloudEnabled } from './lib/supabase'
 import { useCurrency, type Cur } from './lib/currency'
 
 export default function App() {
+  const loc = useLocation()
+  const here = loc.pathname === '/account' ? '/' : loc.pathname + loc.search
   const { session, name } = useAuth()
   const { cur, setCur } = useCurrency()
   return (
@@ -46,7 +48,7 @@ export default function App() {
             </select>
           </label>
           {cloudEnabled && (
-            <Link to="/account" className="btn btn-ghost btn-sm">{session ? name || 'Account' : 'Sign in'}</Link>
+            <Link to="/account" state={{ from: here }} className="btn btn-ghost btn-sm">{session ? name || 'Account' : 'Sign in'}</Link>
           )}
         </div>
       </header>
