@@ -1,6 +1,7 @@
 // Shared runner for the three shares labs (swing, new ideas, day trading): Yahoo Finance prices
 // for US and ASX shares, one step of the lab, saved to lab_state. Run by Vercel cron with
 // `Authorization: Bearer <CRON_SECRET>`; without the key (or with ?dry=1) nothing is saved.
+import { withLedger } from './trials.js'
 import { newState, summary } from '../../src/lib/lab.js'
 import { audPerUsd } from './labrun.js'
 import { rpc, sb } from './forecaster.js'
@@ -98,7 +99,7 @@ export function sharesHandler(opts) {
       for (const c of usable) if (c.session && !sessions[c.market]) sessions[c.market] = c.session
       const market = { coins: usable, held: {}, live, audPerUsd: rate, quotes, estimated: {}, sessions, full: want.full ?? true }
       if (opts.events) market.events = await weekCalendar().catch(() => [])
-      const state = opts.stepFn(saved ? structuredClone(saved) : newState(rate, now, opts.accounts), market, now)
+      const state = await withLedger(opts.sid, saved ? structuredClone(saved) : newState(rate, now, opts.accounts), s => opts.stepFn(s, market, now), { dry })
       if (want.full !== false) state.coinsScanned = usable.map(c => c.base)
       let out = null
       if (!dry) out = await rpc('lab_put', { sid: opts.sid, payload: state })

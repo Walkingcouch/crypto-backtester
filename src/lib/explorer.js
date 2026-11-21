@@ -7,7 +7,8 @@
 //  - Each idea gets ONE look at the held-back last 180 days, and only once it clears a bar that
 //    RISES with the number of ideas tried (the expected best t-score of that many coin flips).
 //  - Simpler ideas are preferred: each extra condition costs fitness.
-import { assess, RIGOR_V } from './rigor.js'
+import { allTrials, assess, RIGOR_V } from './rigor.js'
+import { preSeal, sealedLast } from './exam.js'
 import { comboId, describeCombo, HOLDS, randomCond, STOPS, validCombo } from './blocks.js'
 import { DAY, events, LAB, stats } from './lab.js'
 
@@ -66,7 +67,7 @@ export function evolve(data, S = EXPLORE, state, now) {
   const ex = (state.explore ||= { gen: 0, tried: 0, holdoutTests: 0, population: [], graduates: [], seen: [], log: [] })
   ex.gen++
   const rnd = rng((now / 3_600_000) ^ (ex.gen * 2654435761))
-  const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
+  const last = sealedLast(data)              // breeding and the held-back look never see the sealed exam window
   const cut = last - S.validDays * DAY
   const seen = new Set(ex.seen)
   if (S.benchmarks && !data.bench) { data.bench = {}; for (const [m, b] of Object.entries(S.benchmarks)) data.bench[m] = data.coins.find(c => c.base === b) }
@@ -91,7 +92,7 @@ export function evolve(data, S = EXPLORE, state, now) {
     if (seen.has(id)) continue
     seen.add(id); ex.tried++; added++
     const full = { kind: 'combo', ...spec, ...(S.asset ? { asset: S.asset } : {}) }
-    const ev = events(full, data)
+    const ev = preSeal(events(full, data))
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     if (train.n < S.minTrades) continue
     const fitness = train.t - S.complexityCost * (spec.conds.length - 1)
@@ -114,12 +115,12 @@ export function evolve(data, S = EXPLORE, state, now) {
   for (const p of ex.population) {
     if (p.tested || p.train.t < bar || p.train.n < S.minGradTrades) continue
     p.tested = true; ex.holdoutTests++
-    const ev = events(p.spec, data)
+    const evAll = events(p.spec, data), ev = preSeal(evAll)
     p.valid = stats(ev.filter(e => e.t >= cut), S.refCost)
-    p.all = stats(ev)
+    p.all = stats(evAll)
     p.passed = p.valid.n >= 15 && p.valid.mean > 0 && p.valid.t >= 1
     // the same professional checks as the fixed labs, with every idea ever bred counted as a try
-    const [checked] = assess([{ id: p.id, spec: p.spec, ev, pass: p.passed, train: p.train }], data, { cost: S.refCost, trials: ex.tried, family: () => p.id })
+    const [checked] = assess([{ id: p.id, spec: p.spec, ev, evAll, pass: p.passed, train: p.train }], data, { cost: S.refCost, trials: allTrials(state, ex.tried), family: () => p.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
     p.rigor = checked.rigor; p.basicPassed = p.passed; p.passed = checked.pass
     ex.log.push({ t: now, id: p.id, text: p.text, trainT: p.train.t, valid: p.valid, passed: p.passed, rigor: p.rigor })
     if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, rigor: p.rigor, gen: p.gen, at: now })
@@ -135,8 +136,8 @@ export function evolve(data, S = EXPLORE, state, now) {
   // graduates checked under older checks (or none) must pass the current ones, or they leave
   ex.graduates = ex.graduates.filter(g => {
     if (g.rigor?.v === RIGOR_V) return true
-    const ev = events(g.spec, data)
-    const [c] = assess([{ id: g.id, spec: g.spec, ev, pass: true, train: g.train }], data, { cost: S.refCost, trials: ex.tried, family: () => g.id })
+    const evAll = events(g.spec, data), ev = preSeal(evAll)
+    const [c] = assess([{ id: g.id, spec: g.spec, ev, evAll, pass: true, train: g.train }], data, { cost: S.refCost, trials: allTrials(state, ex.tried), family: () => g.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
     g.rigor = c.rigor
     if (!c.pass) ex.log.push({ t: now, id: g.id, text: g.text, trainT: g.train.t, valid: g.valid, passed: false, rigor: c.rigor, note: 'removed: failed the updated professional checks (real daily ups and downs, beating random by more than costs, beating the index)' })
     return c.pass

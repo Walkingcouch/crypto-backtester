@@ -2,19 +2,20 @@
 // state, takes a market snapshot (prices, candles, live exchange spreads), runs one step and
 // saves. Called by Supabase pg_cron with `Authorization: Bearer <CRON_SECRET>`. Without the
 // key (or with ?dry=1) it runs on a copy and saves nothing: the pages use that as a preview.
+import { withLedger } from './trials.js'
 import { newState, summary } from '../../src/lib/lab.js'
 import { rpc, sb } from './forecaster.js'
 import { weekCalendar } from './econ.js'
 
 export const API = 'https://data-api.binance.vision/api/v3'
 export const DAY = 86_400_000
-const STABLES = new Set(['U', 'USDD', 'FRAX', 'USDF', 'USDQ', 'USDG', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI', 'USDP', 'USDS', 'USDE', 'USD1', 'XUSD', 'RLUSD', 'EUR', 'EURI', 'AEUR', 'GBP', 'PYUSD', 'USTC', 'UST', 'SUSD', 'BFUSD', 'USDT'])
-const NOT_COINS = new Set(['WBTC', 'WBETH', 'WETH', 'PAXG', 'XAUT', 'BETH', 'STETH'])
+export const STABLES = new Set(['U', 'USDD', 'FRAX', 'USDF', 'USDQ', 'USDG', 'USDC', 'FDUSD', 'TUSD', 'BUSD', 'DAI', 'USDP', 'USDS', 'USDE', 'USD1', 'XUSD', 'RLUSD', 'EUR', 'EURI', 'AEUR', 'GBP', 'PYUSD', 'USTC', 'UST', 'SUSD', 'BFUSD', 'USDT'])
+export const NOT_COINS = new Set(['WBTC', 'WBETH', 'WETH', 'PAXG', 'XAUT', 'BETH', 'STETH'])
 // Binance's tokenised US stocks and ETFs (e.g. NVDAB, SOXLB) trade like coins but aren't crypto
 // New tokenised stocks keep appearing (SPCXB, MUB…): treat any short ticker ending in B as one,
 // except real coins that happen to end in B.
-const REAL_B = new Set(['BNB', 'ARB', 'BB', 'BOB', 'SNB', 'ORB', 'WOB', 'SUB', 'JOB', 'DOB', 'ZRB'])
-const isStockToken = b => STOCK_RE.test(b) || (/^[A-Z]{2,5}B$/.test(b) && !REAL_B.has(b))
+const REAL_B = new Set(['BNB', 'ARB', 'BB', 'BOB', 'SNB', 'ORB', 'WOB', 'SUB', 'JOB', 'DOB', 'ZRB', 'SHIB'])
+export const isStockToken = b => STOCK_RE.test(b) || (/^[A-Z]{2,5}B$/.test(b) && !REAL_B.has(b))
 const STOCK_RE = /^(AAPL|AMZN|AMD|BABA|COIN|CRCL|GOOGL|GOOG|HOOD|INTC|META|MSFT|MSTR|NFLX|NVDA|ORCL|PLTR|QQQ|SOXL|SPY|SQQQ|TQQQ|TSLA|TSM|UBER|AVGO|ARM|SMCI|GME|AMC|DIS|JPM|V|MA|IWM|GLD|SLV|TLT|XLE|XLF|NKE|PYPL|SHOP|SNOW|RIVN|LCID|BA|KO|PEP|WMT|COST|IBIT|MSTU|CRWV|IREN|CIFR|SBET|BMNR|GLXY|RKLB|OKLO|HIMS|ASTS)B$/
 
 export async function getJSON(url, ms = 9000) {
@@ -75,6 +76,35 @@ export async function binanceSpreads() {
 // CoinSpot lists many more coins than its public price feed covers (e.g. PEPE), so for a
 // scanned coin missing from the feed the Lab assumes a cautious 1% spread and labels it.
 const COINSPOT_EST_SPREAD = 0.01
+
+/**
+ * Binance reuses some tickers (the old LUNA's history runs straight into the new LUNA's after a
+ * pause), which would look like a 5,000,000% jump. A series is split wherever trading stopped for
+ * 5+ days or the price moved more than 20× between bars: the latest piece keeps the ticker, older
+ * pieces become 'LUNA~1', 'LUNA~2' (testing only, judged as LUNA for the top-list check).
+ */
+export function splitSegments(c) {
+  if (!c) return [c]
+  const cuts = []
+  for (let i = 1; i < c.t.length; i++) {
+    const r = c.c[i - 1] > 0 ? c.o[i] / c.c[i - 1] : 1
+    if (c.t[i] - c.t[i - 1] > 5 * DAY || r > 20 || r < 1 / 20) cuts.push(i)
+  }
+  if (!cuts.length) return [c]
+  const bounds = [0, ...cuts, c.t.length], out = []
+  for (let k = 0; k < bounds.length - 1; k++) {
+    const [a, b] = [bounds[k], bounds[k + 1]]
+    const seg = Object.fromEntries(['t', 'o', 'h', 'l', 'c', 'v'].map(f => [f, c[f]?.slice(a, b)]))
+    seg.base = k === bounds.length - 2 ? c.base : `${c.base}~${bounds.length - 2 - k}`
+    out.push(seg)
+  }
+  return out.reverse()                                        // current piece first
+}
+
+/** Point-in-time top lists by month (api/pit-cron.js), or null until the first build finishes. */
+async function loadPit() {
+  try { const r = await sb('/rest/v1/lab_state?id=eq.pit-universe&select=data'); return r.ok ? ((await r.json())[0]?.data ?? null) : null } catch { return null }
+}
 
 /** Coins CoinSpot actually sells (from this site's /api/listings, which checks CoinSpot's public
  *  API and is cached for an hour). null when unknown: then every coin is allowed, as before. */
@@ -140,8 +170,19 @@ export function labHandler(opts) {
           .map(t => t.symbol.slice(0, -4))
           .filter(b => csListed.has(b) && !universe.includes(b) && !STABLES.has(b) && !NOT_COINS.has(b) && !isStockToken(b) && !/(UP|DOWN|BULL|BEAR)$/.test(b))
       }
-      const want = [...new Set([...universe, ...wideCoins, ...held])]
-      const deepSet = new Set([...universe, ...held])
+      // point-in-time history (pit-cron): coins that WERE in the top list during the tested years,
+      // including ones since delisted, so the past isn't tested only on today's survivors
+      let history = [], member = null
+      const pit = opts.pit === false ? null : await loadPit()
+      if (pit?.months && (interval === '1d' || nPages > 1)) {
+        const sets = new Map(Object.entries(pit.months).map(([m, list]) => [m, new Set(list.slice(0, N))]))
+        const keys = [...sets.keys()].sort()
+        member = (b0, t) => { const b = b0.split('~')[0], m = new Date(t).toISOString().slice(0, 7); const s = sets.get(m) || sets.get(m < keys[0] ? keys[0] : keys[keys.length - 1]); return s ? s.has(b) : true }
+        const from = new Date(Date.now() - nPages * 1000 * STEP[interval]).toISOString().slice(0, 7)
+        history = [...new Set(keys.filter(k => k >= from).flatMap(k => [...sets.get(k)]))].filter(b => !universe.includes(b) && !held.has(b))
+      }
+      const want = [...new Set([...universe, ...wideCoins, ...held, ...history])]
+      const deepSet = new Set([...universe, ...held, ...history])
       const fetchBars = async () => {                 // at most 16 requests in flight, to stay polite to Binance
         const out = new Array(want.length); let k = 0
         await Promise.all(Array.from({ length: 16 }, async () => {
@@ -153,11 +194,18 @@ export function labHandler(opts) {
       const [rate, cs, cb, bn, coins] = await Promise.all([
         audPerUsd(), coinspotSpreads(), coinbaseSpreads([...deepSet]), binanceSpreads(), fetchBars(),
       ])
+      // split reused tickers; older pieces only ever join the testing history
+      const pieces = coins.map(splitSegments)
+      coins.length = 0
+      const oldPieces = []
+      for (const ps of pieces) { coins.push(ps[0]); oldPieces.push(...ps.slice(1).filter(Boolean)) }
       const live = {}
       for (const t of tickers) if (t.symbol.endsWith('USDT')) live[t.symbol.slice(0, -4)] = +t.lastPrice
       const market = {
         coins: coins.filter(c => c && c.c.length > minBars && (universe.includes(c.base) || wideCoins.includes(c.base))),
         deep: opts.wide ? coins.filter(c => c && c.c.length > minBars && universe.includes(c.base)) : undefined,
+        history: [...coins.filter(c => c && c.c.length > 30 && history.includes(c.base)), ...oldPieces.filter(c => c.c.length > 30)],   // past members only: for testing, never traded
+        member,
         held: Object.fromEntries(coins.filter(c => c && held.has(c.base)).map(c => [c.base, c])),
         live, audPerUsd: rate,
         quotes: { john: { ...cs }, mark: cb, binance: bn }, estimated: { john: {} },
@@ -171,13 +219,13 @@ export function labHandler(opts) {
       }
       if (opts.events) market.events = await weekCalendar().catch(() => [])
       const now = Date.now()
-      const state = stepFn(saved ? structuredClone(saved) : newState(rate, now), market, now)
+      const state = await withLedger(sid, saved ? structuredClone(saved) : newState(rate, now), s => stepFn(s, market, now), { dry })
       if (!dry) saved = await rpc('lab_put', { sid, payload: state })
       res.setHeader('content-type', 'application/json')
       res.setHeader('cache-control', dry ? 'public, s-maxage=1800, stale-while-revalidate=7200' : 'no-store')
       res.status(200).send(JSON.stringify({
         dry, saved: dry ? null : saved, ms: Date.now() - t0, summary: summary(state),
-        wide: wideCoins.length, quotes: { coinspot: Object.keys(cs).length, coinbase: Object.keys(cb).length, binance: Object.keys(bn).length }, state,
+        wide: wideCoins.length, history: history.length, pitMonths: pit?.months ? Object.keys(pit.months).length : 0, quotes: { coinspot: Object.keys(cs).length, coinbase: Object.keys(cb).length, binance: Object.keys(bn).length }, state,
       }))
     } catch (e) {
       res.status(500).json({ error: String(e && e.message || e) })

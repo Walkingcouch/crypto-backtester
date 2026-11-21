@@ -16,6 +16,9 @@
 //  6. Deflated Sharpe (Bailey & López de Prado 2014): the probability the daily Sharpe is real
 //     after allowing for how many rules the lab has ever tried. Must be at least 95%.
 //  7. Year by year: results for every calendar year, including bear markets (crypto 2022).
+//  9. Portfolio replay: the rule traded with the real account limits (positions at once, size).
+// 10. Sealed exam (exam.js): one recorded look at a window nothing was chosen on.
+// 11. Luck is counted across EVERY lab and idea ever tried (trial ledger), not per lab.
 //  8. Market types: results in up / mixed / down trends and calm / normal / wild markets
 //     (regime.js); confirmed differences adjust position size, never switch a rule off.
 //
@@ -28,9 +31,10 @@
 //  - shares must also beat their market index over the same days by more than costs
 
 import { regimeProfile } from './regime.js'
+import { sitExam } from './exam.js'
 
 /** Bumped whenever the checks change, so results made under older checks are re-made. */
-export const RIGOR_V = 2
+export const RIGOR_V = 3
 
 const DAY = 86_400_000
 const GAMMA = 0.5772156649
@@ -184,12 +188,39 @@ export function shuffleDrawdown(netR, { sims = 200, size = 0.1, seed = 11 } = {}
 }
 
 /**
+ * Portfolio replay: the rule's trades in time order, taken only while the account has room:
+ * at most `maxOpen` positions, one per coin or share, each using `slot` of the account's value
+ * at the time. Returns what the account would actually have made with those limits.
+ */
+export function portfolioReplay(ev, netOf, { maxOpen = 3, slot = 0.25 } = {}) {
+  const list = ev.map(e => ({ t: e.t, exitT: e.exitT, base: e.base, r: netOf(e) })).filter(x => Number.isFinite(x.r)).sort((a, b) => a.t - b.t || (a.base < b.base ? -1 : 1))
+  if (!list.length) return null
+  let cash = 1, peak = 1, maxDD = 0, taken = 0
+  const open = []
+  const mark = () => { const eq = cash + open.reduce((a, p) => a + p.alloc, 0); if (eq > peak) peak = eq; maxDD = Math.max(maxDD, 1 - eq / peak); return eq }
+  const close = upTo => {
+    open.sort((a, b) => a.exitT - b.exitT)
+    while (open.length && open[0].exitT <= upTo) { const p = open.shift(); cash += p.alloc * (1 + p.r); mark() }
+  }
+  for (const x of list) {
+    close(x.t)
+    if (open.length >= maxOpen || open.some(p => p.base === x.base)) continue
+    const alloc = Math.min(cash, slot * mark())
+    if (!(alloc > 0)) continue
+    cash -= alloc; open.push({ ...x, alloc }); taken++
+  }
+  close(Infinity)
+  const years = Math.max(1 / 12, (list[list.length - 1].exitT - list[0].t) / (365 * DAY))
+  return { taken, available: list.length, total: +(cash - 1).toFixed(4), annual: +(Math.pow(Math.max(cash, 1e-9), 1 / years) - 1).toFixed(4), maxDD: +maxDD.toFixed(4), maxOpen, slot: +slot.toFixed(3) }
+}
+
+/**
  * Run every check on a lab's tested rules and tighten `pass`.
  * found: [{ id, spec, ev, pass, ... }]; opts: { cost, netOf(e) → net result or null, exitOffset,
  * trials (rules ever tried in this lab), family(f) → string (rules sharing it are "neighbours") }
  */
 export function assess(found, data, opts) {
-  const { cost = 0, exitOffset = 0, trials = found.length, family = f => f.spec?.kind || f.kind, warmup = 200 } = opts
+  const { cost = 0, exitOffset = 0, trials = found.length, family = f => f.spec?.kind || f.kind, warmup = 200, portfolio = null, exam = null } = opts
   const netOf = opts.netOf || (e => e.g - cost)
   // first pass: daily Sharpe of every rule (the spread of Sharpes feeds the deflated Sharpe)
   for (const f of found) {
@@ -229,29 +260,43 @@ export function assess(found, data, opts) {
       deflated: dsr >= 0.95,
       ...(idx != null ? { index: idx > 0 } : {}),
     }
+    // with the real account limits (positions at once, size each)
+    const pf = portfolio ? portfolioReplay(evs, netOf, portfolio) : null
+    if (pf) checks.portfolio = pf.total > 0 && pf.taken >= 20
+    // the sealed exam: only for rules that passed everything else; sat once and kept
+    let ex = null
+    if (exam && f.evAll && Object.values(checks).every(Boolean) && f.pass) { ex = sitExam(exam.state, f.id, f.evAll, netOf, exam.now); checks.sealed = ex.passed }
+    else if (exam?.state?.exams?.[f.id]) { ex = exam.state.exams[f.id]; checks.sealed = ex.passed }
     f.rigor = {
       v: RIGOR_V, days: D.T, sharpe: +(D.sr * Math.sqrt(365)).toFixed(2), meanNet: +m.toFixed(5),
       annual: +(Math.pow(eq, 365 / Math.max(1, D.T)) - 1).toFixed(4), maxDD: +maxDD.toFixed(4),
       shuffleDD: +shuffleDrawdown(net.map(x => x.r)).toFixed(4),
       randomP: +rb.p.toFixed(3), randomMean: +rb.randomMean.toFixed(5),
       neighbours: { n: sibs.length, up: sibsUp }, dsr: +dsr.toFixed(3), trials, years, checks,
+      ...(pf ? { portfolio: pf } : {}), ...(ex ? { exam: ex } : {}), examRequired: !!exam,
       edgeVsRandom: +edgeVsRandom.toFixed(5), ...(idx != null ? { vsIndex: +idx.toFixed(5) } : {}),
       regime: regimeProfile(f.ev || [], data, e => netOf(e)),
-      passedAll: Object.values(checks).every(Boolean),
+      passedAll: Object.values(checks).every(Boolean) && (!exam || checks.sealed === true),
     }
     f.basicPass = f.pass
     f.pass = !!(f.pass && f.rigor.passedAll)
   }
-  for (const f of found) { delete f._net; delete f._daily; delete f._n; delete f._m }
+  for (const f of found) { delete f._net; delete f._daily; delete f._n; delete f._m; delete f.evAll }
   return found.sort((a, b) => (b.pass - a.pass) || b.train.t - a.train.t)
 }
 
 /** Running count of distinct rules a lab has ever tested (for the deflated Sharpe). */
 export function countTrials(state, ids) {
-  if (!state) return ids.length
+  if (!state) return ids.length + HUMAN_TRIALS
   const seen = new Set(state.trialIds || [])
   for (const id of ids) seen.add(id)
   state.trialIds = [...seen].slice(-5000)
   state.trials = Math.max(state.trials || 0, seen.size)
-  return state.trials
+  return allTrials(state, state.trials)
 }
+
+/** Rule ideas tried by hand while building and redesigning the labs (counted against luck too). */
+export const HUMAN_TRIALS = 150
+/** Everything ever tried across ALL labs: this lab's count plus the others' (state.trialsOthers is
+ *  filled in by the server from the shared trial ledger) plus the hand-made allowance. */
+export const allTrials = (state, own) => own + (state?.trialsOthers || 0) + HUMAN_TRIALS

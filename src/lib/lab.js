@@ -15,6 +15,7 @@
 
 import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
+import { preSeal, sealedLast } from './exam.js'
 import { btcContext, comboSignal, describeCombo } from './blocks.js'
 
 export const DAY = 86_400_000
@@ -145,7 +146,7 @@ export function xsRank(kind, coin, i, data) {
       if ((c.market || '') !== (coin.market || '') || /^(SPY|QQQ|IWM|DIA|IOZ|VAS|STW)(\.AX)?$/.test(c.base)) continue   // index funds aren't ranked
       c.tIdx ||= new Map(c.t.map((t, j) => [t, j]))
       const j = c.tIdx.get(coin.t[i])
-      if (j == null) continue
+      if (j == null || (data.member && !data.member(c.base, coin.t[i]))) continue
       const v = xsValue(kind, c, j)
       if (Number.isFinite(v)) vals.push([c.base, v])
     }
@@ -244,7 +245,7 @@ export function events(r, data) {
     const D = coin.c.length
     let busy = 0
     for (let i = 200; i < D - 1; i++) {
-      if (i < busy || !signal(r, coin, F, i, data)) continue
+      if (i < busy || (data.member && !data.member(coin.base, coin.t[i])) || !signal(r, coin, F, i, data)) continue
       const entry = coin.o[i + 1], stop = entry * (1 - stopPct(F.dvol[i], r.H, r.stopM))
       let exit = NaN, j = i + 1
       for (; j <= i + r.H && j < D; j++) {
@@ -279,7 +280,7 @@ export function stats(ev, cost = 0) {
 
 /** Test every rule: chosen on the older data (train), checked on the last `validDays` (valid). */
 export function discover(data, S = LAB, state) {
-  const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
+  const last = sealedLast(data)              // choosing never sees the sealed exam window (exam.js)
   const cut = last - S.validDays * DAY
   if (S.benchmarks) {                       // shares: judge every rule against the market index
     data.bench = {}
@@ -287,8 +288,8 @@ export function discover(data, S = LAB, state) {
   }
   const rules = S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])]
   const found0 = rules.map(r => {
-    const ev = events(r, data)
-    const all = stats(ev)                       // gross, used by the cost gate
+    const evAll = events(r, data), ev = preSeal(evAll)
+    const all = stats(evAll)                    // gross, used by the cost gate
     // with a benchmark, the test is the return ABOVE the index over the same days, after costs
     // (each market pays its own round-trip cost when S.refCostBy is set)
     const judged = S.benchmarks ? ev.filter(e => Number.isFinite(e.ex)).map(e => ({ ...e, g: e.ex - (S.refCostBy?.[e.m] ?? S.refCost) })) : ev
@@ -296,12 +297,12 @@ export function discover(data, S = LAB, state) {
     const train = stats(judged.filter(e => e.exitT < cut), cost)
     const valid = stats(judged.filter(e => e.t >= cut), cost)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
-    const out = { ...r, text: describe(r), train, valid, all, pass, ev }
+    const out = { ...r, text: describe(r), train, valid, all, pass, ev, evAll }
     if (S.benchmarks) out.vsIndex = stats(ev.filter(e => Number.isFinite(e.ex)).map(e => ({ g: e.ex })))   // average beat of the index, before costs
     return out
   })
   return assess(found0, data, {
-    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`,
+    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null,
     netOf: S.benchmarks ? (e => (Number.isFinite(e.ex) ? e.ex - (S.refCostBy?.[e.m] ?? S.refCost) : NaN)) : (e => e.g - S.refCost),
   })
 }
@@ -406,7 +407,9 @@ export function step(state, market, now, S = LAB, opts = {}) {
   const log = (kind, text) => push(state.events, { t: now, kind, text }, 300)
   const price = b => market.live[b]
   const ruleByV = new Map(state.rules.map(r => [r.v, r]))
-  const data = { coins: market.coins }
+  // testing uses today's coins plus past top-list coins (incl. delisted), each only while it was in the top list;
+  // live signals below still only use market.coins (today's list)
+  const data = market.history?.length ? { coins: [...market.coins, ...market.history], member: market.member } : { coins: market.coins, member: market.member }
   const rate = market.audPerUsd
   for (const a of Object.values(state.accounts)) if (a.cashAud == null) { a.cashAud = (a.cashUsd ?? a.startUsd) * a.startAud / a.startUsd; delete a.cashUsd }
   // an account that has never traded can only ever have been worth its start (clears the old FX blip)
@@ -456,7 +459,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   // 2. the coach, weekly
   const ruleList = S.ruleSet || S.extraRules
   const newRules = ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))   // rule list changed: re-test now
-  const unchecked = state.found?.length && !state.found.some(f => f.rigor?.v === 2)     // tested before the professional checks existed
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 3)     // tested before the professional checks existed
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules || unchecked) {
     const found = (opts.discover || discover)(data, S, state, now)
     coach(state, found, now, S)

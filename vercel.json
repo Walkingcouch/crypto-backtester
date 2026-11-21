@@ -50,6 +50,9 @@
     },
     "api/exec-watch.js": {
       "maxDuration": 60
+    },
+    "api/pit-cron.js": {
+      "maxDuration": 300
     }
   },
   "headers": [
@@ -119,6 +122,10 @@
     {
       "path": "/api/exec-watch",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/pit-cron",
+      "schedule": "35 * * * *"
     }
   ]
 }

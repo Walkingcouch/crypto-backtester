@@ -8,7 +8,9 @@ export interface LabRule {
 export interface Rigor {
   days: number; sharpe: number; meanNet: number; annual: number; maxDD: number; shuffleDD: number; randomP: number; randomMean: number
   neighbours: { n: number; up: number }; dsr: number; trials: number; years: Record<string, { n: number; mean: number }>
-  checks: { random: boolean; doubleFee: boolean; neighbours: boolean; deflated: boolean; index?: boolean }; passedAll: boolean
+  checks: { random: boolean; doubleFee: boolean; neighbours: boolean; deflated: boolean; index?: boolean; portfolio?: boolean; sealed?: boolean }; passedAll: boolean
+  portfolio?: { taken: number; available: number; total: number; annual: number; maxDD: number; maxOpen: number; slot: number }
+  exam?: { n: number; mean: number; t: number; at: number; window: [number, number]; passed: boolean }; examRequired?: boolean
   v?: number; edgeVsRandom?: number; vsIndex?: number; regime?: RegimeProfile | null
 }
 export type RegimeVerdict = 'suits' | 'struggles' | 'leans better' | 'leans worse' | 'same' | 'too few'

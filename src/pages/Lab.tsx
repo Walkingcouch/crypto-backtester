@@ -312,6 +312,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
           <NowCtx.Provider value={state?.regimeNow?.[''] ?? state?.regimeNow?.US}>
           <section className="card">
             <h2>The rule it's using</h2>
+            {v.family === 'shares' && <p className="notice info small" style={{ marginTop: 0 }}><b>Survivor bias:</b> the share list is today's S&amp;P 100 and ASX 50, tested back over years when some of them weren't in those indexes, and without the companies that dropped out or failed. That flatters any rule that buys dips or holds, so treat shares results as optimistic. (Crypto labs don't have this problem any more: they test each past day on the coins that were actually most traded then, including ones since delisted.)</p>}
             {(() => { const R = state?.regimeNow || {}; const parts = Object.entries(R).map(([m, x]) => `${m === '' ? 'Crypto (Bitcoin)' : m === 'US' ? 'US (S&P 500)' : 'ASX (ASX 200)'}: ${TREND_TXT[x.trend]}, ${VOL_TXT[x.vol].toLowerCase()} swings`); return parts.length ? <p className="small" style={{ marginTop: 0 }}><b>Market now</b> <Info>Trend: the leader above its 200-day average and up over 30 days (uptrend), below it and down over 30 days (downtrend), otherwise mixed. Swings: last 30 days' daily moves compared with its own previous year (lower, middle or upper third).</Info> {parts.join(' · ')}</p> : null })()}
             {champ ? (
               <RuleCard r={champ} title={`${champ.practice ? 'Top-scoring idea' : 'Current rule'} · v${champ.v}`} />
@@ -390,6 +391,8 @@ const CHECK_TEXT: Record<keyof Rigor['checks'], [string, string]> = {
   doubleFee: ['Survives double fees', 'Still makes money if trading costs are twice what we assume'],
   neighbours: ['Nearby settings work too', 'At least half the other settings of the same idea also make money after costs, so it is not a lucky spike'],
   deflated: ['Real after counting tries', 'Deflated Sharpe of at least 95% (daily ups and downs of every open trade counted): the result is unlikely to be the luckiest of all the rules this lab has tried'],
+  portfolio: ['Works with the real account limits', 'Replayed in time order with the real account limits (only a few positions open at once, a fixed share of the account each, one per coin or share): the account still ends up ahead after costs, over 20+ trades actually taken'],
+  sealed: ['Passes the sealed exam', 'A stretch of recent history (1 Jul – 21 Nov 2026) that nothing is ever chosen or tuned on. A rule that passes everything else gets ONE look at it, and that result is kept for good'],
   index: ['Beats the market index', 'Shares only: made more than buying the market index (S&P 500 or ASX 200 fund) over exactly the same days, after costs'],
 }
 const TREND_TXT = { up: 'Uptrend', mixed: 'Mixed', down: 'Downtrend' } as const
@@ -426,13 +429,14 @@ function RegimeBox({ p, now }: { p: NonNullable<Rigor['regime']>; now?: { trend:
 function RigorBox({ g, now }: { g: Rigor; now?: { trend: 'up' | 'mixed' | 'down'; vol: 'calm' | 'normal' | 'wild' } }) {
   const years = Object.entries(g.years || {})
   const keys = (Object.keys(CHECK_TEXT) as (keyof Rigor['checks'])[]).filter(k => g.checks[k] !== undefined)
+  const examPending = g.examRequired && g.checks.sealed === undefined
   return (
     <div className="explain-box small" style={{ marginTop: 8 }}>
-      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{g.v !== 2 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}</div>
+      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{(g.v ?? 0) < 3 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}{examPending && <span className="muted"> · the sealed exam is only sat once everything else passes</span>}</div>
       <ul className="lab-events" style={{ margin: '6px 0' }}>
         {keys.map(k => (
           <li key={k}>{g.checks[k] ? '✓' : '✗'} {CHECK_TEXT[k][0]} <Info>{CHECK_TEXT[k][1]}</Info>
-            <span className="muted"> · {k === 'random' ? `random runs beat it ${pct0(g.randomP)} of the time${g.edgeVsRandom != null ? `; ${pct(g.edgeVsRandom)} a trade better than random` : ''}` : k === 'index' ? `${pct(g.vsIndex ?? 0)} a trade above the index after costs` : k === 'doubleFee' ? `${pct(g.meanNet)} a trade after one set of costs` : k === 'neighbours' ? `${g.neighbours.up} of ${g.neighbours.n} other settings make money` : `${pct0(g.dsr)} after ${g.trials.toLocaleString()} rules tried`}</span></li>
+            <span className="muted"> · {k === 'random' ? `random runs beat it ${pct0(g.randomP)} of the time${g.edgeVsRandom != null ? `; ${pct(g.edgeVsRandom)} a trade better than random` : ''}` : k === 'index' ? `${pct(g.vsIndex ?? 0)} a trade above the index after costs` : k === 'portfolio' ? (g.portfolio ? `took ${g.portfolio.taken} of ${g.portfolio.available} trades, ${pct(g.portfolio.total)} in total (${pct(g.portfolio.annual)} a year), worst fall ${pct0(g.portfolio.maxDD)}` : '') : k === 'sealed' ? (g.exam ? `${g.exam.n} trades in the sealed window, ${pct(g.exam.mean)} a trade after costs (sat once)` : '') : k === 'doubleFee' ? `${pct(g.meanNet)} a trade after one set of costs` : k === 'neighbours' ? `${g.neighbours.up} of ${g.neighbours.n} other settings make money` : `${pct0(g.dsr)} after ${g.trials.toLocaleString()} rule ideas tried across all labs`}</span></li>
         ))}
       </ul>
       <div className="muted">Daily Sharpe {g.sharpe.toFixed(2)} over {g.days.toLocaleString()} days · spread across its open trades: {pct(g.annual)} a year, worst fall {pct0(g.maxDD)} · worst fall in 95% of shuffled trade orders at 10% a trade: {pct0(g.shuffleDD)}</div>

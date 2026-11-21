@@ -14,6 +14,7 @@
 // Each with and without a daily-trend filter (price above its ~20-day average).
 import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
+import { preSeal, sealedLast } from './exam.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
 import { coach, estimate, stats } from './lab.js'
 
@@ -154,7 +155,7 @@ export function dayEvents(r, data) {
     const D = dayFeatures(coin), n = coin.c.length
     let busy = 0
     for (let i = 500; i < n - 1; i++) {
-      if (i < busy || !daySignal(r, coin, D, i)) continue
+      if (i < busy || (data.member && !data.member(coin.base, coin.t[i])) || !daySignal(r, coin, D, i)) continue
       const e = i + 1
       const hold = holdHours(r, D.hour[e])
       const last = e + hold - 1
@@ -175,18 +176,18 @@ export function dayEvents(r, data) {
 
 /** Re-test all rules: chosen on older data, checked on the held-back last 60 days. */
 export function discoverDay(data, S = DT, state) {
-  const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
+  const last = sealedLast(data)              // choosing never sees the sealed exam window (exam.js)
   const cut = last - S.validDays * DAY
   const found = allDayRules().map(r => {
-    const ev = dayEvents(r, data)
+    const evAll = dayEvents(r, data), ev = preSeal(evAll)
     r.ev = ev
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     const valid = stats(ev.filter(e => e.t >= cut), S.refCost)
-    const all = stats(ev)
+    const all = stats(evAll)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
-    return { ...r, spec: { kind: r.kind, n: r.n, k: r.k, K: r.K, z: r.z, last: r.last, H: r.H, tf: r.tf }, text: describeDay(r), train, valid, all, pass, ev }
+    return { ...r, spec: { kind: r.kind, n: r.n, k: r.k, K: r.K, z: r.z, last: r.last, H: r.H, tf: r.tf }, text: describeDay(r), train, valid, all, pass, ev, evAll }
   })
-  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind })
+  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null })
 }
 
 /**
@@ -195,7 +196,7 @@ export function discoverDay(data, S = DT, state) {
  */
 export function walkForward(found, data, S = DT) {
   const first = Math.min(...data.coins.map(c => c.t[500] ?? Infinity))
-  const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
+  const last = sealedLast(data)   // stop at the sealed exam window
   const months = [], trades = []
   for (let start = first + S.wfTrainDays * DAY; start + S.wfTestDays * DAY <= last; start += S.wfTestDays * DAY) {
     const end = start + S.wfTestDays * DAY
@@ -244,7 +245,9 @@ export function stepDay(state, market, now, S = DT) {
   const price = b => market.live[b]
   const coinOf = b => market.coins.find(c => c.base === b) || market.held?.[b]
   const ruleByV = new Map(state.rules.map(r => [r.v, r]))
-  const data = { coins: market.deep || market.coins }   // rules are chosen on deep history; signals run on every coin
+  // rules are chosen on deep history (today's top coins plus past top-list coins, incl. delisted, each
+  // only while it was in the list); signals run on every tradable coin
+  const data = { coins: [...(market.deep || market.coins), ...(market.history || [])], member: market.member }
   state.unit = 'hours'
 
   // closes everything whose bars up to `upTo` say it's done (stop, early exit, end of hold)
@@ -277,7 +280,7 @@ export function stepDay(state, market, now, S = DT) {
 
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => f.rigor?.v === 2)
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 3)
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
     const found = discoverDay(data, S, state)
     state.walk = walkForward(found, data, S)
