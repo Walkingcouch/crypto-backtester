@@ -96,5 +96,5 @@ export default async function handler(req, res) {
   let saved = null
   if (!dry) saved = await rpc('lab_put', { sid: 'signals', payload: state })
   res.setHeader('cache-control', dry ? 'public, s-maxage=600' : 'no-store')
-  res.status(200).json({ dry, saved, ms: Date.now() - t0, added, total: state.signals.length, status: state.status, crowd: { okSubs: state.crowd.okSubs, runs: Object.values(state.crowd.hist || {})[0]?.length || 0, trending: state.crowd.trending, top: Object.entries(state.crowd.counts || {}).sort((a, b) => b[1] - a[1]).slice(0, 10) }, signals: state.signals.slice(0, q.get('full') ? 1500 : 60) })
+  res.status(200).json({ dry, saved, ms: Date.now() - t0, added, total: state.signals.length, status: state.status, crowd: { via: state.crowd.via, okSubs: state.crowd.okSubs, runs: Object.values(state.crowd.hist || {})[0]?.length || 0, trending: state.crowd.trending, top: Object.entries(state.crowd.counts || {}).sort((a, b) => b[1] - a[1]).slice(0, 10) }, signals: state.signals.slice(0, q.get('full') ? 1500 : 60) })
 }

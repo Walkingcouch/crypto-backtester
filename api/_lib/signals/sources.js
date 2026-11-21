@@ -338,17 +338,31 @@ export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date
   }
   const hist = { ...(prev.hist || {}) }, lastSpike = { ...(prev.lastSpike || {}) }
   const out = []
-  if (okSubs >= 2) {                                  // don't learn "normal" from a run where Reddit was blocked
+  const spike = (b, n, normal, where) => out.push({ source: 'Reddit', sourceUrl: 'https://apewisdom.io/all-crypto/', category: 'crowd_crypto', entity_name: 'Reddit buzz spike', entity_role: where,
+    asset_ticker: b, asset_name: b, market: 'CRYPTO', action: 'ALERT', trade_size_usd: null, trade_date: null, disclosed_at: now, post_id: `reddit-${b}-${new Date(now).toISOString().slice(0, 13)}`,
+    sentiment_score: 0.3, conflict_score: null, text: `${b}: ${n} Reddit mentions ${where}, vs about ${normal.toFixed(normal < 10 ? 1 : 0)} normally. Untested: the report card grades whether buzz like this came before rises or before falls.` })
+  // 1) ApeWisdom: counts every crypto subreddit's mentions over the last 24 h, with the 24 h before
+  //    for comparison, and (unlike Reddit itself) answers requests from cloud servers
+  let ape = null
+  try {
+    const j = JSON.parse(await get('https://apewisdom.io/api/v1.0/filter/all-crypto'))
+    ape = (j.results || []).filter(r => r && r.ticker).map(r => ({ b: String(r.ticker).toUpperCase().replace(/\.X$/, ''), n: +r.mentions || 0, prev: +r.mentions_24h_ago || 0 }))
+  } catch { /* fall back to counting hot posts */ }
+  let via = 'none'
+  if (ape?.length) {
+    via = 'apewisdom'
+    for (const { b, n, prev: p } of ape) {
+      if (!/^[A-Z0-9]{2,10}$/.test(b) || CROWD_SKIP.has(b)) continue
+      counts[b] = n
+      if (n >= 10 && n >= 3 * Math.max(p, 3) && !(lastSpike[b] && now - lastSpike[b] < DAY)) { lastSpike[b] = now; spike(b, n, p, 'in the last 24 h across crypto subreddits (ApeWisdom)') }
+    }
+  } else if (okSubs >= 2) {                           // 2) our own count of hot posts (needs 12 h of history)
+    via = 'reddit'
     for (const b of bases) {
       const h = hist[b] || []
       const avg = h.length ? h.reduce((a, x) => a + x, 0) / h.length : 0
-      if (h.length >= 24 && counts[b] >= 4 && counts[b] >= 3 * Math.max(avg, 1) && !(lastSpike[b] && now - lastSpike[b] < DAY)) {
-        lastSpike[b] = now
-        out.push({ source: 'Reddit', sourceUrl: 'https://www.reddit.com/r/CryptoCurrency/hot/', category: 'crowd_crypto', entity_name: 'Reddit buzz spike', entity_role: 'Crypto subreddits',
-          asset_ticker: b, asset_name: b, market: 'CRYPTO', action: 'ALERT', trade_size_usd: null, trade_date: null, disclosed_at: now, post_id: `reddit-${b}-${new Date(now).toISOString().slice(0, 13)}`,
-          sentiment_score: 0.3, conflict_score: null, text: `${b}: in ${counts[b]} hot posts across ${okSubs} crypto subreddits, vs about ${avg.toFixed(1)} normally. Untested: the report card grades whether buzz like this came before rises or before falls.` })
-      }
-      hist[b] = [...h, counts[b]].slice(-336)          // a week of half-hourly runs
+      if (h.length >= 24 && counts[b] >= 4 && counts[b] >= 3 * Math.max(avg, 1) && !(lastSpike[b] && now - lastSpike[b] < DAY)) { lastSpike[b] = now; spike(b, counts[b], avg, `in hot posts across ${okSubs} crypto subreddits`) }
+      hist[b] = [...h, counts[b]].slice(-336)
     }
   }
   const trending = (chatter.trending || []).map(c => c.symbol).filter(Boolean)
@@ -358,5 +372,5 @@ export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date
       asset_ticker: c.symbol, asset_name: c.name, market: 'CRYPTO', action: 'ALERT', trade_size_usd: null, trade_date: null, disclosed_at: now, post_id: `cg-${c.symbol}-${new Date(now).toISOString().slice(0, 13)}`,
       sentiment_score: 0.3, conflict_score: null, text: `${c.name} (${c.symbol}) joined CoinGecko's trending list${c.rank ? ` (market-cap rank ${c.rank})` : ''}. Untested: the report card grades what trending coins did next.` })
   }
-  return { signals: out, snapshot: { hist, lastSpike, trending: chatter.sources?.coingecko?.ok ? trending : (prev.trending || null), counts, okSubs, at: now } }
+  return { signals: out, snapshot: { hist, lastSpike, trending: chatter.sources?.coingecko?.ok ? trending : (prev.trending || null), counts, okSubs, via, at: now } }
 }
