@@ -307,6 +307,32 @@ export function discover(data, S = LAB, state) {
   })
 }
 
+/**
+ * Each exchange's real round trip right now: its fee both ways, the typical (median) buy–sell gap
+ * across the coins being scanned from its live prices, and slippage both ways.
+ */
+export function venueCosts(accounts, market, S) {
+  const out = {}
+  for (const a of Object.values(accounts || {})) {
+    if (a.market) continue                                    // share brokers are costed per order elsewhere
+    const q = market.quotes?.[a.id] || {}
+    const gaps = (market.coins || []).map(c => q[c.base]).filter(x => x >= 0).sort((x, y) => x - y)
+    const gap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 0.01
+    out[a.id] = { exchange: a.exchange, cost: +(2 * a.fee + gap + 2 * (S.slippage || 0)).toFixed(4), fee: a.fee, gap: +gap.toFixed(4) }
+  }
+  return out
+}
+/** Rules are chosen and checked at the cost of the exchange that trades real money (CoinSpot). */
+export const LIVE_ACCOUNT = 'john'
+export function withLiveCost(state, market, S) {
+  const v = venueCosts(state.accounts, market, S)
+  state.venueCosts = v
+  const live = v[S.liveAccount || LIVE_ACCOUNT]
+  if (!live) return S
+  state.selectCost = { account: S.liveAccount || LIVE_ACCOUNT, exchange: live.exchange, cost: live.cost }
+  return { ...S, refCost: live.cost }
+}
+
 /** Mark's gain estimate: average gain of all past signals minus one standard error (losers included). */
 export const estimate = all => all.mean - all.se
 
@@ -459,9 +485,9 @@ export function step(state, market, now, S = LAB, opts = {}) {
   // 2. the coach, weekly
   const ruleList = S.ruleSet || S.extraRules
   const newRules = ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))   // rule list changed: re-test now
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 3)     // tested before the professional checks existed
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 4)     // tested before the professional checks existed
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules || unchecked) {
-    const found = (opts.discover || discover)(data, S, state, now)
+    const found = (opts.discover || discover)(data, withLiveCost(state, market, S), state, now)
     coach(state, found, now, S)
     state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all, rigor: f.rigor, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }))
     state.coinsScanned = market.coins.map(c => c.base)

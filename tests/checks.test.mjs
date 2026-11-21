@@ -55,3 +55,15 @@ test('a coin is only tested on days it was in the top list', () => {
   assert.ok(all.length > 0); assert.equal(none.length, 0)
   assert.ok(some.length <= all.length && some.every(e => e.t >= cutoff))
 })
+
+import { venueCosts, withLiveCost } from '../src/lib/lab.js'
+test('rules are chosen at the live exchange\'s real round trip, and each exchange is costed separately', () => {
+  const accounts = { john: { id: 'john', exchange: 'CoinSpot', fee: 0.01 }, binance: { id: 'binance', exchange: 'Binance', fee: 0.001 } }
+  const market = { coins: [{ base: 'BTC' }, { base: 'ETH' }, { base: 'DODO' }], quotes: { john: { BTC: 0.008, ETH: 0.01, DODO: 0.03 }, binance: { BTC: 0.0001, ETH: 0.0002, DODO: 0.001 } } }
+  const v = venueCosts(accounts, market, { slippage: 0.0005 })
+  assert.equal(v.john.cost, +(0.02 + 0.01 + 0.001).toFixed(4))          // 1% each way + median gap 1% + slippage
+  assert.ok(v.binance.cost < 0.005)
+  const state = { accounts }
+  const S2 = withLiveCost(state, market, { refCost: 0.003, slippage: 0.0005 })
+  assert.equal(S2.refCost, v.john.cost); assert.equal(state.selectCost.exchange, 'CoinSpot')
+})

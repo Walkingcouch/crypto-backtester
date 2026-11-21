@@ -309,9 +309,10 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             </div>
           </section>
 
-          <NowCtx.Provider value={state?.regimeNow?.[''] ?? state?.regimeNow?.US}>
+          <NowCtx.Provider value={state?.regimeNow?.[''] ?? state?.regimeNow?.US}><VenueCtx.Provider value={state?.venueCosts}>
           <section className="card">
             <h2>The rule it's using</h2>
+            {state?.selectCost && <p className="small" style={{ marginTop: 0 }}><b>Rules are chosen at {state.selectCost.exchange}'s real cost</b> <Info>Every rule is trained, held-back-checked and put through the professional checks at the round trip of the exchange that trades real money: its fee both ways, the typical buy–sell gap across the coins scanned (read live) and slippage. Each rule also shows what it makes after every exchange's own cost.</Info>: about {pct(state.selectCost.cost)} a round trip ({Object.values(state.venueCosts || {}).map(x => `${x.exchange} ${pct(x.cost)}`).join(' · ')}).</p>}
             {v.family === 'shares' && <p className="notice info small" style={{ marginTop: 0 }}><b>Survivor bias:</b> the share list is today's S&amp;P 100 and ASX 50, tested back over years when some of them weren't in those indexes, and without the companies that dropped out or failed. That flatters any rule that buys dips or holds, so treat shares results as optimistic. (Crypto labs don't have this problem any more: they test each past day on the coins that were actually most traded then, including ones since delisted.)</p>}
             {(() => { const R = state?.regimeNow || {}; const parts = Object.entries(R).map(([m, x]) => `${m === '' ? 'Crypto (Bitcoin)' : m === 'US' ? 'US (S&P 500)' : 'ASX (ASX 200)'}: ${TREND_TXT[x.trend]}, ${VOL_TXT[x.vol].toLowerCase()} swings`); return parts.length ? <p className="small" style={{ marginTop: 0 }}><b>Market now</b> <Info>Trend: the leader above its 200-day average and up over 30 days (uptrend), below it and down over 30 days (downtrend), otherwise mixed. Swings: last 30 days' daily moves compared with its own previous year (lower, middle or upper third).</Info> {parts.join(' · ')}</p> : null })()}
             {champ ? (
@@ -329,7 +330,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
               <ul className="lab-events">{retired.map(r => <li key={r.v}><b>v{r.v}</b> {r.text} <span className="muted small">— {r.reason}</span></li>)}</ul>
             </Disclosure>}
           </section>
-          </NowCtx.Provider>
+          </VenueCtx.Provider></NowCtx.Provider>
 
           <section className="card">
             <h2>The cost gate</h2>
@@ -432,7 +433,7 @@ function RigorBox({ g, now }: { g: Rigor; now?: { trend: 'up' | 'mixed' | 'down'
   const examPending = g.examRequired && g.checks.sealed === undefined
   return (
     <div className="explain-box small" style={{ marginTop: 8 }}>
-      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{(g.v ?? 0) < 3 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}{examPending && <span className="muted"> · the sealed exam is only sat once everything else passes</span>}</div>
+      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{(g.v ?? 0) < 4 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}{examPending && <span className="muted"> · the sealed exam is only sat once everything else passes</span>}</div>
       <ul className="lab-events" style={{ margin: '6px 0' }}>
         {keys.map(k => (
           <li key={k}>{g.checks[k] ? '✓' : '✗'} {CHECK_TEXT[k][0]} <Info>{CHECK_TEXT[k][1]}</Info>
@@ -458,10 +459,13 @@ function downloadTrades(a: Account, lab: string) {
 
 type RegimeNow = { trend: 'up' | 'mixed' | 'down'; vol: 'calm' | 'normal' | 'wild' }
 const NowCtx = createContext<RegimeNow | undefined>(undefined)
+type Venues = Record<string, { exchange: string; cost: number; fee: number; gap: number }>
+const VenueCtx = createContext<Venues | undefined>(undefined)
 
 function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: boolean }) {
   const live = liveRecord(r)
   const now = useContext(NowCtx)
+  const venues = useContext(VenueCtx)
   return (
     <div className={`lab-rule ${small ? 'small' : ''}`}>
       <div className="lab-rule-head"><span className={`tag ${r.status === 'champion' ? 'green' : ''}`}>{title}</span>{r.reason && <span className="muted small">{r.reason}</span>}</div>
@@ -471,6 +475,7 @@ function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: bool
         <span>Past signals: <b className={cls(r.all.mean)}>{pct(r.all.mean)}</b> a trade before costs, won {pct0(r.all.win)} of {r.all.n}</span>
         <span>Conservative estimate: <b>{pct(estimate(r.all))}</b></span>
         {r.vsIndex && <span>Versus the market index: <b className={cls(r.vsIndex.mean)}>{pct(r.vsIndex.mean)}</b> a trade over the same days, before costs</span>}
+        {venues && Object.keys(venues).length > 0 && <span>After each exchange's real cost: {Object.values(venues).map((x, i) => <span key={i}>{i ? ' · ' : ''}{x.exchange} <b className={cls(r.all.mean - x.cost)}>{pct(r.all.mean - x.cost)}</b></span>)} <span className="muted">a trade</span></span>}
         <span>Live on paper: {live.n ? <><b className={cls(live.mean)}>{pct(live.mean)}</b> a trade over {live.n}, won {pct0(live.win)}</> : 'no closed trades yet'}</span>
       </div>
       {r.rigor && <RigorBox g={r.rigor} now={now} />}

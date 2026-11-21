@@ -34,7 +34,7 @@ import { regimeProfile } from './regime.js'
 import { sitExam } from './exam.js'
 
 /** Bumped whenever the checks change, so results made under older checks are re-made. */
-export const RIGOR_V = 3
+export const RIGOR_V = 4
 
 const DAY = 86_400_000
 const GAMMA = 0.5772156649

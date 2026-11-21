@@ -16,7 +16,7 @@ import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
 import { preSeal, sealedLast } from './exam.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
-import { coach, estimate, stats } from './lab.js'
+import { coach, estimate, stats, withLiveCost } from './lab.js'
 
 export const HOUR = 3_600_000
 export const DAY = 86_400_000
@@ -280,10 +280,11 @@ export function stepDay(state, market, now, S = DT) {
 
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 3)
+  const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 4)
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
-    const found = discoverDay(data, S, state)
-    state.walk = walkForward(found, data, S)
+    const SL = withLiveCost(state, market, S)          // choose and check at CoinSpot's real round trip
+    const found = discoverDay(data, SL, state)
+    state.walk = walkForward(found, data, SL)
     if (found.some(f => f.pass)) {
       for (const r of state.rules) if (r.practice && r.status !== 'retired') { r.status = 'retired'; r.reason = 'a rule passed the checks, so practice ended' }
       coach(state, found, now, S)
