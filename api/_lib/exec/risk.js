@@ -22,6 +22,7 @@ export function validateOrder(order, ctx) {
   if (!(order.aud > 0)) return no('amount', 'order amount must be above zero')
   if (order.side === 'BUY') {
     if (ctx.mode === 'live' && S.require_proven && !ctx.proven) return no('unproven', 'the rule behind this signal has not passed every professional check (live mode only mirrors proven rules)')
+    if (order.expected != null && order.cost != null && !(order.expected > order.cost)) return no('cost', `expected gain ${(order.expected * 100).toFixed(2)}% doesn't cover the real round-trip cost of about ${(order.cost * 100).toFixed(2)}% (CoinSpot instant: 1% each way plus the price gap)`)
     if (order.signalAt && ctx.now - order.signalAt > S.max_signal_age_min * 60_000) return no('stale', `signal is ${Math.round((ctx.now - order.signalAt) / 60_000)} min old (limit ${S.max_signal_age_min} min)`)
     if (order.aud > S.max_order_aud + 1e-9) return no('max_order', `${aud(order.aud)} is above the per-order cap of ${aud(S.max_order_aud)}`)
     if ((ctx.spent24h || 0) + order.aud > S.max_daily_spend_aud + 1e-9) return no('daily_cap', `would take 24-hour spending to ${aud((ctx.spent24h || 0) + order.aud)}, above the cap of ${aud(S.max_daily_spend_aud)}`)

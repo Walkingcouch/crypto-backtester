@@ -135,3 +135,14 @@ test('daily cap counts orders placed earlier in the same run', async () => {
   assert.equal([...store.rows.values()].filter(r => r.status === 'rejected' && /cap/.test(r.reason)).length, 1)
   assert.equal(spent24h(store.orders, 'live', NOW), 100)
 })
+
+test('a buy whose expected gain does not beat the real round-trip cost is refused', () => {
+  assert.equal(validateOrder(buy({ expected: 0.0005, cost: 0.03 }), ctx()).rule, 'cost')
+  assert.equal(validateOrder(buy({ expected: 0.04, cost: 0.03 }), ctx()).ok, true)
+  assert.equal(validateOrder(buy(), ctx()).ok, true)          // no estimate (e.g. a manual test): not blocked
+})
+test('live fill reports CoinSpot\'s 1% instant fee', async () => {
+  const a = new CoinSpotAdapter({ mode: 'live', key: 'k', secret: 's', fetch: async () => ({ status: 200, text: async () => '{"status":"ok","amount":"0.00011148","total":"10"}' }) })
+  const f = await a.placeOrder({ coin: 'BTC', side: 'BUY', aud: 10, rate: 88811.85, thresholdPct: 1 })
+  assert.ok(Math.abs(f.feeAud - 0.099) < 0.001)
+})

@@ -10,6 +10,10 @@ import { idemKey, validateOrder } from './risk.js'
 const DAY = 86_400_000
 const LIVE_STATUSES = ['submitted', 'filled', 'paper_filled']
 
+/** Real round trip on CoinSpot instant: 1% in, 1% out, plus the buy–sell gap (the lab's own figure,
+ *  or 1% when it had none). Compared with the rule's expected gain before any real buy. */
+export const realCost = (p, quote) => p.est == null ? null : 2 * 0.01 + (p.spread >= 0 ? p.spread : 0.01)
+
 export function spent24h(orders, mode, now) {
   return orders.filter(o => o.mode === mode && o.venue === 'coinspot' && o.side === 'BUY' && LIVE_STATUSES.includes(o.status) && now - Date.parse(o.created_at) < DAY)
     .reduce((s, o) => s + (+o.requested_aud || 0), 0)
@@ -97,7 +101,7 @@ export async function runExecution(deps) {
       let quote = {}, w = null
       try { [quote, w] = await Promise.all([crypto.getQuote(p.base, 'BUY', audAmt, await ref(p.base)), getWallet()]) } catch (e) { quote = { error: String(e.message || e) } }
       const check = quote.error ? { ok: false, reason: `quote or balance failed: ${quote.error}` }
-        : validateOrder({ side: 'BUY', aud: audAmt, signalPrice, signalAt: p.t }, { mode, settings: S, now, spent24h: spent24h(orders, mode, now), walletAud: w?.aud, quoteRate: quote.rate, proven })
+        : validateOrder({ side: 'BUY', aud: audAmt, signalPrice, signalAt: p.t, expected: p.est ?? null, cost: realCost(p, quote) }, { mode, settings: S, now, spent24h: spent24h(orders, mode, now), walletAud: w?.aud, quoteRate: quote.rate, proven })
       if (!check.ok) { await save({ idem_key: key, status: 'rejected', reason: check.reason, quote_rate: quote.rate || null }, true); log.push(`BUY ${p.base} rejected: ${check.reason}`); continue }
       try {
         const f = await crypto.placeOrder({ coin: p.base, side: 'BUY', aud: audAmt, rate: quote.rate, thresholdPct: S.max_slippage_pct })

@@ -22,7 +22,7 @@ export const ALLOWED = new Set([
   '/api/v2/my/buy/cancel',
   '/api/v2/my/sell/cancel',
 ])
-export const FEE = 0.001   // CoinSpot "buy/sell now" (market) fee
+export const FEE = 0.01    // CoinSpot instant "buy/sell now" fee (1% each way, measured on a live test order)
 
 let lastNonce = 0
 export const nextNonce = (now = Date.now()) => (lastNonce = Math.max(now, lastNonce + 1))
@@ -97,7 +97,7 @@ export class CoinSpotAdapter {
    */
   async placeOrder({ coin, side, aud, amount, rate, thresholdPct }) {
     if (this.mode === 'paper') {
-      const coins = side === 'BUY' ? (aud * (1 - FEE)) / rate : amount
+      const coins = side === 'BUY' ? aud / (rate * (1 + FEE)) : amount
       const value = side === 'BUY' ? aud : amount * rate * (1 - FEE)
       return { status: 'paper_filled', filledRate: rate, filledAmount: coins, feeAud: side === 'BUY' ? aud * FEE : amount * rate * FEE, totalAud: value, raw: { simulated: true } }
     }
@@ -108,7 +108,9 @@ export class CoinSpotAdapter {
     // CoinSpot reports the coin amount and AUD total; the fee is included in the total
     const filledAmount = +j.amount || (side === 'SELL' ? amount : null)
     const total = +j.total || (side === 'BUY' ? aud : null)
-    return { status: 'filled', filledRate: filledAmount && total ? total / filledAmount : rate, filledAmount, feeAud: total ? total * FEE : null, totalAud: total, raw: j, externalId: j.id || j.orderid || null }
+    // the 1% fee is built into the price: a buy gets coins at quote × 1.01, a sell pays quote × 0.99
+    const feeAud = !total ? null : side === 'BUY' ? total - total / (1 + FEE) : total * FEE / (1 - FEE)
+    return { status: 'filled', filledRate: filledAmount && total ? total / filledAmount : rate, filledAmount, feeAud: feeAud == null ? null : +feeAud.toFixed(4), totalAud: total, raw: j, externalId: j.id || j.orderid || null }
   }
 
   async cancelOrder(id, side) {

@@ -106,7 +106,7 @@ export default function AutomationPanel() {
           {!test.armed
             ? <button className="btn btn-ghost btn-sm" disabled={busy || S.kill_switch} onClick={() => setTest({ armed: true, result: '' })}>Test order: buy and sell {aud(S.max_order_aud)} of BTC</button>
             : <>
-                <span>{st.mode === 'live' ? <b className="neg">Real money:</b> : 'Simulated:'} buys {aud(S.max_order_aud)} of BTC, then sells the same amount a few seconds later. Costs about {aud(S.max_order_aud * 0.012)} in fees and price gap.</span>
+                <span>{st.mode === 'live' ? <b className="neg">Real money:</b> : 'Simulated:'} buys {aud(S.max_order_aud)} of BTC, then sells the same amount a few seconds later. Costs about {aud(S.max_order_aud * 0.03)}: CoinSpot charges 1% each way plus its buy–sell gap.</span>
                 <button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => {
                   setBusy(true)
                   try { const r = await call({ action: 'test_roundtrip' }); setTest({ armed: false, result: (r.steps || []).join(' · ') + (r.ok ? ` · cost ${aud(r.cost)}` : '') }); await load() }
