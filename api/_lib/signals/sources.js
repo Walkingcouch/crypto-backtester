@@ -318,9 +318,10 @@ export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date
   const posts = chatter.social || []
   const okSubs = Object.entries(chatter.sources || {}).filter(([k, v]) => k.startsWith('r/') && v.ok).length
   // which coins to count: the 80 most traded on Binance (stablecoins and look-alike words skipped)
-  let bases = []
+  let bases = [], allCoins = null
   try {
     const t = JSON.parse(await get('https://data-api.binance.vision/api/v3/ticker/24hr'))
+    allCoins = new Set(t.filter(x => x.symbol.endsWith('USDT') && +x.quoteVolume > 0).map(x => x.symbol.slice(0, -4)))
     bases = t.filter(x => x.symbol.endsWith('USDT')).sort((a, b) => +b.quoteVolume - +a.quoteVolume).map(x => x.symbol.slice(0, -4))
       .filter(b => /^[A-Z]{3,10}$/.test(b) && !/USD|EUR|^U$/.test(b) && !CROWD_SKIP.has(b) && !(/^[A-Z]{2,5}B$/.test(b) && STOCKISH.has(b.slice(0, -1)))).slice(0, 80)
   } catch { bases = Object.keys(aliases) }
@@ -352,7 +353,7 @@ export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date
   if (ape?.length) {
     via = 'apewisdom'
     for (const { b, n, prev: p } of ape) {
-      if (!/^[A-Z0-9]{2,10}$/.test(b) || CROWD_SKIP.has(b)) continue
+      if (!/^[A-Z0-9]{2,10}$/.test(b) || CROWD_SKIP.has(b) || /USD/.test(b) || (allCoins && !allCoins.has(b))) continue   // coins only (not NVDA, MSTR)
       counts[b] = n
       if (n >= 10 && n >= 3 * Math.max(p, 3) && !(lastSpike[b] && now - lastSpike[b] < DAY)) { lastSpike[b] = now; spike(b, n, p, 'in the last 24 h across crypto subreddits (ApeWisdom)') }
     }
