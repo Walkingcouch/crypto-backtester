@@ -16,7 +16,7 @@ import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
 import { preSeal, sealedLast } from './exam.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
-import { coach, estimate, stats, withLiveCost } from './lab.js'
+import { ACCOUNTS, coach, estimate, stats, withLiveCost } from './lab.js'
 
 export const HOUR = 3_600_000
 export const DAY = 86_400_000
@@ -245,6 +245,8 @@ export function stepDay(state, market, now, S = DT) {
   const price = b => market.live[b]
   const coinOf = b => market.coins.find(c => c.base === b) || market.held?.[b]
   const ruleByV = new Map(state.rules.map(r => [r.v, r]))
+  // keep each paper account's fee and label in step with the exchange's real pricing (lab.js ACCOUNTS)
+  for (const cfg of ACCOUNTS) { const a = state.accounts[cfg.id]; if (a) { a.fee = cfg.fee; a.feeLabel = cfg.feeLabel } }
   // rules are chosen on deep history (today's top coins plus past top-list coins, incl. delisted, each
   // only while it was in the list); signals run on every tradable coin
   const data = { coins: [...(market.deep || market.coins), ...(market.history || [])], member: market.member }
