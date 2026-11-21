@@ -510,8 +510,9 @@ export function step(state, market, now, S = LAB, opts = {}) {
   }
 
   // 2. the coach, weekly
-  const ruleList = S.ruleSet || S.extraRules
-  const newRules = ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))   // rule list changed: re-test now
+  // rule list changed (new rules added): re-test now rather than at the weekly re-test
+  const ruleList = opts.discover ? null : () => (S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])])
+  const newRules = !!ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))
   const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 4)     // tested before the professional checks existed
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules || unchecked) {
     const found = (opts.discover || discover)(data, withLiveCost(state, market, S), state, now)
