@@ -46,6 +46,7 @@ export default function AutomationPanel() {
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState<Partial<Settings>>({})
   const [test, setTest] = useState<{ armed: boolean; result: string }>({ armed: false, result: '' })
+  const [arm, setArm] = useState('')
   const [fills, setFills] = useState<Record<string, { price: string; qty: string; fee: string }>>({})
 
   const call = useCallback(async (body?: object) => {
@@ -175,6 +176,10 @@ export default function AutomationPanel() {
                 <td className="small">{o.requested_aud != null ? aud(o.requested_aud) : ''}{o.filled_amount != null ? <div className="muted">{num(o.filled_amount, 8)} units</div> : null}</td>
                 <td className="small">{aud(o.fee_aud)}</td>
                 <td><span className={`tag ${color}`}>{label}</span>{o.reason && <div className="small muted" style={{ maxWidth: 260, whiteSpace: 'normal' }}>{o.reason}</div>}
+                  {o.status === 'rejected' && o.side === 'BUY' && o.venue === 'coinspot' && o.mode === st.mode && !String(o.idem_key).startsWith('test:') && Date.now() - Date.parse(o.created_at) < 86_400_000 && (
+                    arm === o.idem_key
+                      ? <div style={{ marginTop: 4 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { const r = await call({ action: 'buy_anyway', idem_key: o.idem_key }); setArm(''); if (!r.ok) setError(r.error); await load() } catch (e) { setError(String((e as Error).message)) } finally { setBusy(false) } }}>Confirm {st.mode === 'live' ? 'real ' : ''}buy {aud(S.max_order_aud)}</button> <button className="btn btn-ghost btn-sm" onClick={() => setArm('')}>Cancel</button></div>
+                      : <div style={{ marginTop: 4 }}><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setArm(o.idem_key)}>Buy anyway</button></div>)}
                   {(o.status === 'failed' || o.status === 'rejected') && o.raw ? <details className="small"><summary>raw response</summary><pre style={{ whiteSpace: 'pre-wrap', maxWidth: 300 }}>{JSON.stringify(o.raw, null, 1)}</pre></details> : null}</td>
               </tr>
             )

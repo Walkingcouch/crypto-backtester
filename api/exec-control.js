@@ -6,7 +6,7 @@ import { SUPABASE_KEY, SUPABASE_URL } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { paperWallet, spent24h } from './_lib/exec/engine.js'
 import { validateOrder } from './_lib/exec/risk.js'
-import { loadExec, setSettings, store } from './_lib/exec/store.js'
+import { labState, loadExec, setSettings, store } from './_lib/exec/store.js'
 
 const LIMITS = {       // sanity bounds so a typo can't set a $25,000 order
   max_order_aud: [1, 1000], max_daily_spend_aud: [1, 5000], min_wallet_buffer_aud: [0, 100000],
@@ -52,6 +52,7 @@ export default async function handler(req, res) {
     }
     const { settings, orders } = await loadExec(body.days || 30)
     if (action === 'test_roundtrip') return res.status(200).json(await testRoundTrip(settings, orders, who))
+    if (action === 'buy_anyway') return res.status(200).json(await buyAnyway(settings, orders, who, body.idem_key))
     if (action === 'mark_executed' || action === 'dismiss') {
       const o = orders.find(x => x.idem_key === body.idem_key)
       if (!o || o.venue !== 'superhero' || o.status !== 'pending_manual') return res.status(400).json({ error: 'not a pending share order' })
@@ -127,5 +128,32 @@ async function testRoundTrip(S, orders, who) {
   } catch (e) {
     await st.put({ idem_key: sellRow.idem_key, status: 'failed', reason: String(e.message || e), raw: e.raw || null }, true)
     return { ok: false, mode, steps: [...steps, `SELL failed: ${e.message}. The BTC is in your wallet; sell it in CoinSpot or try again.`] }
+  }
+}
+
+// "Buy anyway": the owner overrides a blocked lab signal (e.g. expected gain below cost). Only for a
+// crypto BUY that was refused, while the lab still holds that position. Bought at today's quote for the
+// per-order amount, still inside the kill switch, per-order and daily caps and the wallet reserve.
+// The row keeps the lab's key, so the normal job sells exactly this amount when the lab closes it.
+async function buyAnyway(S, orders, who, key) {
+  const o = orders.find(x => x.idem_key === key)
+  const A = adapters(process.env, S)
+  if (!o || o.venue !== 'coinspot' || o.side !== 'BUY' || o.status !== 'rejected') return { ok: false, error: 'only a blocked crypto buy can be overridden' }
+  if (o.mode !== A.mode) return { ok: false, error: `that signal was handled in ${o.mode} mode; the bot is now in ${A.mode} mode` }
+  const [lab, acct, base, openedAt] = key.split(':')
+  const L = await labState(lab)
+  if (!L?.accounts?.[acct]?.positions?.some(p => p.base === base && String(p.t) === openedAt)) return { ok: false, error: `the lab has already sold ${base}, so there's nothing to follow` }
+  const now = Date.now(), audAmt = +S.max_order_aud
+  const w = A.mode === 'live' ? await A.crypto.getWalletBalance() : paperWallet(orders, +(process.env.PAPER_WALLET_AUD || 1000))
+  const q = await A.crypto.getQuote(base, 'BUY', audAmt)
+  const check = validateOrder({ side: 'BUY', aud: audAmt }, { mode: A.mode, settings: S, now, spent24h: spent24h(orders, A.mode, now), walletAud: w.aud, quoteRate: q.rate, proven: true })
+  if (!check.ok) return { ok: false, error: check.reason }
+  const st = store(orders)
+  try {
+    const f = await A.crypto.placeOrder({ coin: base, side: 'BUY', aud: audAmt, rate: q.rate, thresholdPct: S.max_slippage_pct })
+    await st.put({ idem_key: key, status: f.status, requested_aud: audAmt, quote_rate: q.rate, filled_rate: f.filledRate, filled_amount: f.filledAmount, fee_aud: f.feeAud, raw: f.raw, external_id: f.externalId || null, reason: `bought anyway by ${who} (was blocked: ${o.reason})` }, true)
+    return { ok: true, base, amount: f.filledAmount, rate: f.filledRate }
+  } catch (e) {
+    return { ok: false, error: `CoinSpot refused: ${e.message}` }
   }
 }
