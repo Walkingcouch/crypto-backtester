@@ -17,6 +17,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // local layout checks only (never set in a real build): pretend to be signed in
+    if (import.meta.env.VITE_FAKE_SESSION) { setSession({ access_token: 'x', user: { id: 'u', email: 'john.ahchee@example.com' } } as unknown as Session); setName('john'); setReady(true); return }
     if (!supabase) return
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); loadName(data.session); setReady(true) })
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); loadName(s) })

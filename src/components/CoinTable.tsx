@@ -85,7 +85,7 @@ export default function CoinTable({ M, mode, selected, onRow, colorOf, onPeriod 
         <label className="mini"><span>Trend</span>
           <select value={M.trendFilter} onChange={e => M.setTrendFilter(e.target.value as 'all' | 'up' | 'down')}>
             <option value="all">Any</option><option value="up">Uptrend only</option><option value="down">Downtrend only</option></select></label>
-        <label className="mini check" title="Binance also lists tokenised US shares and ETFs (tickers ending in B, like AAPLB or SPYB), gold tokens and dollar-pegged tokens. None of them can be bought on Australian crypto exchanges.">
+        <label className="mini checkline" title="Binance also lists tokenised US shares and ETFs (tickers ending in B, like AAPLB or SPYB), gold tokens and dollar-pegged tokens. None of them can be bought on Australian crypto exchanges.">
           <input type="checkbox" checked={M.coinsOnly} onChange={e => M.setCoinsOnly(e.target.checked)} />
           <span>Real coins only{M.coinsOnly && M.hiddenNonCoins ? ` (${M.hiddenNonCoins} shares, gold and pegged tokens hidden)` : ''}</span></label>
       </div>

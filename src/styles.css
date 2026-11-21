@@ -288,8 +288,8 @@ tr.hl td { background: var(--accent-soft); }
 .search { flex: 1 1 180px; max-width: 280px; }
 .mini { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
 .mini select { padding: 7px 10px; font-size: 14px; }
-.mini.check { display: flex; align-items: center; gap: 6px; align-self: end; padding-bottom: 8px; cursor: pointer; }
-.mini.check input { width: 16px; height: 16px; margin: 0; }
+.mini.checkline { display: flex; align-items: center; gap: 6px; align-self: end; padding-bottom: 8px; cursor: pointer; }
+.mini.checkline input { width: 16px; height: 16px; margin: 0; }
 @media (max-width: 560px) { .search { max-width: none; } .mini { flex: 1 1 calc(50% - 10px); } }
 
 .mkt { display: grid; }
@@ -491,7 +491,7 @@ table.record td:first-child { white-space: nowrap; }
 .sm-item.blocked { opacity: .85; }
 .sm-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .sm-ticker { font-size: 16px; }
-.sm-text { margin: 6px 0 4px; }
+.sm-text { margin: 6px 0 4px; overflow-wrap: anywhere; }
 .sm-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .sm-scores { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin-top: 6px; font-size: 14px; }
 .sm-bar { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: var(--surface-2); margin-left: 6px; vertical-align: middle; overflow: hidden; }
@@ -500,3 +500,21 @@ table.record td:first-child { white-space: nowrap; }
 .tag.small { font-size: 11px; }
 
 .sm-order { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); font-size: 14px; display: grid; gap: 4px; }
+
+/* phone: wide record tables become one card per row (td data-label shows the column name) */
+td.wrap { white-space: normal; }
+@media (max-width: 560px) {
+  table.stack-sm, table.stack-sm tbody, table.stack-sm tr, table.stack-sm td { display: block; width: 100%; }
+  table.stack-sm thead { display: none; }
+  table.stack-sm tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
+  table.stack-sm td { border: 0; padding: 3px 0 3px 76px !important; white-space: normal; min-width: 0 !important; position: relative; }
+  table.stack-sm td::before { content: attr(data-label); position: absolute; left: 0; top: 4px; width: 68px; color: var(--muted); font-size: 12px; font-weight: 500; }
+  table.stack-sm td:empty, table.stack-sm td[data-empty] { display: none; }
+  table.stack-sm td div[style] { max-width: none !important; }
+}
+/* phone: hide-sm must win over components that set their own display */
+@media (max-width: 720px) { .row-links.hide-sm { display: none; } }
+/* long unbroken strings (links, rule ids, tickers glued together) wrap instead of widening the page */
+main.page { overflow-wrap: break-word; }
+.sm-meta span, .notice, .hint { overflow-wrap: anywhere; }
+@media (max-width: 560px) { .mini.checkline { flex: 1 1 100%; } }

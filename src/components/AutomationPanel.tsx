@@ -187,24 +187,24 @@ export default function AutomationPanel() {
       <section className="card">
         <h2>Order log</h2>
         <p className="muted small" style={{ marginTop: 0 }}>Every trade intent, guardrail block and fill from the last 30 days, kept for debugging and tax records.</p>
-        <div className="table-wrap"><table className="record">
+        <div className="table-wrap"><table className="record stack-sm">
           <thead><tr><th>Time</th><th>Order</th><th>Signal source</th><th>Price: signal → quote → filled</th><th>Amount</th><th>Fee</th><th>Status</th></tr></thead>
           <tbody>{[...crypto, ...shares].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(o => {
             const [label, color] = STATUS[o.status] || [o.status, '']
             return (
               <tr key={o.idem_key}>
-                <td>{when(o.created_at)}</td>
-                <td><span className={`tag ${o.side === 'BUY' ? 'green' : 'red'}`}>{o.side}</span> <b>{o.asset}</b><div className="muted small">{o.venue} · {o.mode}</div></td>
-                <td className="small" style={{ minWidth: 140, whiteSpace: 'normal' }}>{o.source}</td>
-                <td className="small">{num(o.signal_price)} → {num(o.quote_rate)} → <b>{num(o.filled_rate)}</b></td>
-                <td className="small">{o.requested_aud != null ? aud(o.requested_aud) : ''}{o.filled_amount != null ? <div className="muted">{num(o.filled_amount, 8)} units</div> : null}</td>
-                <td className="small">{aud(o.fee_aud)}</td>
-                <td><span className={`tag ${color}`}>{label}</span>{o.reason && <div className="small muted" style={{ maxWidth: 260, whiteSpace: 'normal' }}>{o.reason}</div>}
+                <td data-label="Time">{when(o.created_at)}</td>
+                <td data-label="Order"><span className={`tag ${o.side === 'BUY' ? 'green' : 'red'}`}>{o.side}</span> <b>{o.asset}</b><div className="muted small">{o.venue} · {o.mode}</div></td>
+                <td data-label="Source" className="small wrap" style={{ minWidth: 140 }}>{o.source}</td>
+                <td data-label="Price" className="small">{num(o.signal_price)} → {num(o.quote_rate)} → <b>{num(o.filled_rate)}</b></td>
+                <td data-label="Amount" className="small">{o.requested_aud != null ? aud(o.requested_aud) : ''}{o.filled_amount != null ? <div className="muted">{num(o.filled_amount, 8)} units</div> : null}</td>
+                <td data-label="Fee" className="small">{aud(o.fee_aud)}</td>
+                <td data-label="Status"><span className={`tag ${color}`}>{label}</span>{o.reason && <div className="small muted" style={{ maxWidth: 260, whiteSpace: 'normal' }}>{o.reason}</div>}
                   {can && o.status === 'rejected' && o.side === 'BUY' && o.venue === 'coinspot' && o.mode === st.mode && !String(o.idem_key).includes('test:manual') && Date.now() - Date.parse(o.created_at) < 86_400_000 && (
                     arm === o.idem_key
                       ? <div style={{ marginTop: 4 }}><button className="btn btn-primary btn-sm" disabled={busy} onClick={async () => { setBusy(true); try { const r = await call({ action: 'buy_anyway', idem_key: o.idem_key }); setArm(''); if (!r.ok) setError(r.error); await load() } catch (e) { setError(String((e as Error).message)) } finally { setBusy(false) } }}>Confirm {st.mode === 'live' ? 'real ' : ''}buy {aud(S.max_order_aud)}</button> <button className="btn btn-ghost btn-sm" onClick={() => setArm('')}>Cancel</button></div>
                       : <div style={{ marginTop: 4 }}><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setArm(o.idem_key)}>Buy anyway</button></div>)}
-                  {(o.status === 'failed' || o.status === 'rejected') && o.raw ? <details className="small"><summary>raw response</summary><pre style={{ whiteSpace: 'pre-wrap', maxWidth: 300 }}>{JSON.stringify(o.raw, null, 1)}</pre></details> : null}</td>
+                  {(o.status === 'failed' || o.status === 'rejected') && o.raw ? <details className="small"><summary>raw response</summary><pre style={{ whiteSpace: 'pre-wrap', maxWidth: '100%' }}>{JSON.stringify(o.raw, null, 1)}</pre></details> : null}</td>
               </tr>
             )
           })}</tbody></table></div>
