@@ -164,7 +164,7 @@ export default function AutomationPanel() {
               </tr>
             )
           })}</tbody></table></div>
-        {!st.orders.length && <p className="muted small">No orders yet. The job checks every 15 minutes.</p>}
+        {!st.orders.length && <p className="muted small">No orders yet. The job checks every 5 minutes.</p>}
       </section>
     </>
   )

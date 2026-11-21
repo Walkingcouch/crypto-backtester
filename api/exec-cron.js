@@ -1,4 +1,4 @@
-// Execution job (every 15 minutes, Vercel cron). Mirrors the chosen paper lab's trades into CoinSpot
+// Execution job (every 5 minutes, Vercel cron). Mirrors the chosen paper lab's trades into CoinSpot
 // orders (simulated in paper mode) and queues share orders for Superhero. Only runs with the cron
 // secret: nobody can trigger orders from a browser.
 import { livePrice } from './_lib/forecaster.js'
