@@ -16,6 +16,21 @@
 //  6. Deflated Sharpe (Bailey & López de Prado 2014): the probability the daily Sharpe is real
 //     after allowing for how many rules the lab has ever tried. Must be at least 95%.
 //  7. Year by year: results for every calendar year, including bear markets (crypto 2022).
+//  8. Market types: results in up / mixed / down trends and calm / normal / wild markets
+//     (regime.js); confirmed differences adjust position size, never switch a rule off.
+//
+// Fixes (Nov 2026, found investigating the Shares Explorer's too-good results):
+//  - the daily series now marks each open trade to its real daily closes (it used to spread the
+//    trade's result evenly over the days held, which hid the ups and downs inside a trade and made
+//    a 20-day share trade look almost riskless: Sharpe 3.7 instead of about 1)
+//  - "beats random" now also needs the rule to beat random entries by at least one round of costs,
+//    not just by a statistically detectable sliver (with 10,000 trades a 0.03% gap is "significant")
+//  - shares must also beat their market index over the same days by more than costs
+
+import { regimeProfile } from './regime.js'
+
+/** Bumped whenever the checks change, so results made under older checks are re-made. */
+export const RIGOR_V = 2
 
 const DAY = 86_400_000
 const GAMMA = 0.5772156649
@@ -62,15 +77,37 @@ const moments = x => {
  * evenly across the rule's open trades. Days with nothing open are 0. Same-day trades on coins that
  * move together are therefore one day's result, not many independent ones.
  */
-export function dailySeries(net) {
+export function dailySeries(net, data, exitOffset = 0) {
   if (!net.length) return []
+  const coins = data ? coinIndex(data) : null
   const sum = new Map(), cnt = new Map()
   let lo = Infinity, hi = -Infinity
-  for (const { t, exitT, r } of net) {
+  const add = (d, x) => { sum.set(d, (sum.get(d) || 0) + x); cnt.set(d, (cnt.get(d) || 0) + 1) }
+  for (const { t, exitT, r, base } of net) {
     if (!(r > -1)) continue
+    const total = Math.log(1 + r)
     const a = Math.floor(t / DAY), b = Math.max(a, Math.floor((exitT - 1) / DAY))
-    const per = Math.log(1 + r) / (b - a + 1)
-    for (let d = a; d <= b; d++) { sum.set(d, (sum.get(d) || 0) + per); cnt.set(d, (cnt.get(d) || 0) + 1) }
+    // mark to market: the coin's real close-to-close moves while held, with whatever the closes
+    // don't explain (stop fills, costs) put on the exit day so the trade still totals its result
+    const c = coins?.get(base)
+    const i = c ? c.tIdx.get(t) : null, j = c ? c.tIdx.get(exitT - exitOffset) : null
+    if (c && i != null && j != null && j > i) {
+      const byDay = new Map()
+      let prev = c.o[i + 1], used = 0
+      for (let k = i + 1; k <= j; k++) {
+        const x = Math.log(c.c[k] / prev); prev = c.c[k]
+        if (!Number.isFinite(x)) continue
+        const d = Math.floor(c.t[k] / DAY); byDay.set(d, (byDay.get(d) || 0) + x); used += x
+      }
+      const ds = [...byDay.keys()].sort((x, y) => x - y)
+      if (ds.length) {
+        byDay.set(ds[ds.length - 1], byDay.get(ds[ds.length - 1]) + (total - used))
+        for (const d of ds) { add(d, byDay.get(d)); lo = Math.min(lo, d); hi = Math.max(hi, d) }
+        continue
+      }
+    }
+    const per = total / (b - a + 1)
+    for (let d = a; d <= b; d++) add(d, per)
     lo = Math.min(lo, a); hi = Math.max(hi, b)
   }
   const out = []
@@ -156,8 +193,8 @@ export function assess(found, data, opts) {
   const netOf = opts.netOf || (e => e.g - cost)
   // first pass: daily Sharpe of every rule (the spread of Sharpes feeds the deflated Sharpe)
   for (const f of found) {
-    const net = (f.ev || []).map(e => ({ exitT: e.exitT, t: e.t, r: netOf(e) })).filter(x => Number.isFinite(x.r))
-    const daily = dailySeries(net)
+    const net = (f.ev || []).map(e => ({ exitT: e.exitT, t: e.t, base: e.base, r: netOf(e) })).filter(x => Number.isFinite(x.r))
+    const daily = dailySeries(net, data, exitOffset)
     const m = moments(daily)
     f._net = net
     f._daily = { T: daily.length, sr: m.sd > 0 ? m.mean / m.sd : 0, skew: m.skew, kurt: m.kurt, mean: m.mean, sd: m.sd, series: daily }
@@ -179,18 +216,27 @@ export function assess(found, data, opts) {
     const sibsUp = sibs.filter(o => meanNet(o) > 0).length
     const m = meanNet(f)
     const dsr = deflatedSharpe(D.sr, D.T, D.skew, D.kurt, trials, srVar)
+    const evs = f.ev || []
+    const grossMean = evs.length ? evs.reduce((a, e) => a + e.g, 0) / evs.length : 0
+    const edgeVsRandom = grossMean - rb.randomMean
+    // shares: beyond the market index over exactly the same days, after costs
+    const exs = evs.filter(e => Number.isFinite(e.ex))
+    const idx = exs.length >= 0.8 * evs.length && exs.length >= 30 ? exs.reduce((a, e) => a + e.ex, 0) / exs.length - cost : null
     const checks = {
-      random: rb.p <= 0.05,
+      random: rb.p <= 0.05 && edgeVsRandom >= cost,
       doubleFee: net.length >= 30 && m - cost > 0,       // a second round of costs on top of the first
       neighbours: !sibs.length || sibsUp / sibs.length >= 0.5,
       deflated: dsr >= 0.95,
+      ...(idx != null ? { index: idx > 0 } : {}),
     }
     f.rigor = {
-      days: D.T, sharpe: +(D.sr * Math.sqrt(365)).toFixed(2), meanNet: +m.toFixed(5),
+      v: RIGOR_V, days: D.T, sharpe: +(D.sr * Math.sqrt(365)).toFixed(2), meanNet: +m.toFixed(5),
       annual: +(Math.pow(eq, 365 / Math.max(1, D.T)) - 1).toFixed(4), maxDD: +maxDD.toFixed(4),
       shuffleDD: +shuffleDrawdown(net.map(x => x.r)).toFixed(4),
       randomP: +rb.p.toFixed(3), randomMean: +rb.randomMean.toFixed(5),
       neighbours: { n: sibs.length, up: sibsUp }, dsr: +dsr.toFixed(3), trials, years, checks,
+      edgeVsRandom: +edgeVsRandom.toFixed(5), ...(idx != null ? { vsIndex: +idx.toFixed(5) } : {}),
+      regime: regimeProfile(f.ev || [], data, e => netOf(e)),
       passedAll: Object.values(checks).every(Boolean),
     }
     f.basicPass = f.pass

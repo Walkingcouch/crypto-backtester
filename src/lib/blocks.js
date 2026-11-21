@@ -58,15 +58,19 @@ function condText(c) {
     case 'volSpike': return `trades ${c.k}× its usual daily volume`
     case 'quiet': return 'after a quiet fortnight'
     case 'loud': return 'after a wild fortnight'
-    case 'btcUp': return `while Bitcoin is above its ${c.n}-day average`
-    case 'btcDown': return `while Bitcoin is below its ${c.n}-day average`
+    case 'btcUp': return `while ${LEADER_NAME} is above its ${c.n}-day average`
+    case 'btcDown': return `while ${LEADER_NAME} is below its ${c.n}-day average`
     default: return c.p
   }
 }
+let LEADER_NAME = 'Bitcoin'
+/** Plain-English rule. spec.asset 'share' words it for shares (the leader is the market index). */
 export function describeCombo(spec) {
+  const share = spec.asset === 'share'
+  LEADER_NAME = share ? 'the market index' : 'Bitcoin'
   const coin = spec.conds.filter(c => BLOCKS[c.p]?.kind === 'coin').map(condText)
   const ctx = spec.conds.filter(c => BLOCKS[c.p]?.kind !== 'coin').map(condText)
-  const head = coin.length ? `Buy when a coin ${coin.join(' and ')}` : 'Buy any of the top coins'
+  const head = coin.length ? `Buy when a ${share ? 'share' : 'coin'} ${coin.join(' and ')}` : share ? 'Buy any of the shares' : 'Buy any of the top coins'
   return `${head}${ctx.length ? ' ' + ctx.join(' ') : ''}. Hold up to ${spec.H} days; stop about ${spec.stopM}× its usual move.`
 }
 

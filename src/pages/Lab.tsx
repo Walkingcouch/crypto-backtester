@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { Disclosure, Info } from '../components/Info'
 import { fmtMoney, useCurrency } from '../lib/currency'
@@ -309,8 +309,10 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             </div>
           </section>
 
+          <NowCtx.Provider value={state?.regimeNow?.[''] ?? state?.regimeNow?.US}>
           <section className="card">
             <h2>The rule it's using</h2>
+            {(() => { const R = state?.regimeNow || {}; const parts = Object.entries(R).map(([m, x]) => `${m === '' ? 'Crypto (Bitcoin)' : m === 'US' ? 'US (S&P 500)' : 'ASX (ASX 200)'}: ${TREND_TXT[x.trend]}, ${VOL_TXT[x.vol].toLowerCase()} swings`); return parts.length ? <p className="small" style={{ marginTop: 0 }}><b>Market now</b> <Info>Trend: the leader above its 200-day average and up over 30 days (uptrend), below it and down over 30 days (downtrend), otherwise mixed. Swings: last 30 days' daily moves compared with its own previous year (lower, middle or upper third).</Info> {parts.join(' · ')}</p> : null })()}
             {champ ? (
               <RuleCard r={champ} title={`${champ.practice ? 'Top-scoring idea' : 'Current rule'} · v${champ.v}`} />
             ) : <p className="muted">{v.noRule}</p>}
@@ -326,6 +328,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
               <ul className="lab-events">{retired.map(r => <li key={r.v}><b>v{r.v}</b> {r.text} <span className="muted small">— {r.reason}</span></li>)}</ul>
             </Disclosure>}
           </section>
+          </NowCtx.Provider>
 
           <section className="card">
             <h2>The cost gate</h2>
@@ -383,25 +386,58 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
 }
 
 const CHECK_TEXT: Record<keyof Rigor['checks'], [string, string]> = {
-  random: ['Beats random entries', 'Beat at least 95% of 200 runs that bought the same coins at random times and held them as long'],
+  random: ['Beats random entries', 'Beat at least 95% of 200 runs that bought the same coins at random times and held them as long, AND by more than one round of trading costs (a tiny but "significant" gap is just the market\'s drift)'],
   doubleFee: ['Survives double fees', 'Still makes money if trading costs are twice what we assume'],
   neighbours: ['Nearby settings work too', 'At least half the other settings of the same idea also make money after costs, so it is not a lucky spike'],
-  deflated: ['Real after counting tries', 'Deflated Sharpe of at least 95%: the result is unlikely to be the luckiest of all the rules this lab has tried'],
+  deflated: ['Real after counting tries', 'Deflated Sharpe of at least 95% (daily ups and downs of every open trade counted): the result is unlikely to be the luckiest of all the rules this lab has tried'],
+  index: ['Beats the market index', 'Shares only: made more than buying the market index (S&P 500 or ASX 200 fund) over exactly the same days, after costs'],
+}
+const TREND_TXT = { up: 'Uptrend', mixed: 'Mixed', down: 'Downtrend' } as const
+const VOL_TXT = { calm: 'Calm', normal: 'Normal', wild: 'Wild' } as const
+const VERDICT: Record<string, [string, string]> = { suits: ['suits ✓', 'pos'], struggles: ['struggles ✓', 'neg'], 'leans better': ['leans better', ''], 'leans worse': ['leans worse', ''], same: ['no difference', 'muted'], 'too few': ['too few trades', 'muted'] }
+
+/** How a rule did in each market type, and whether each difference is confirmed. */
+function RegimeBox({ p, now }: { p: NonNullable<Rigor['regime']>; now?: { trend: 'up' | 'mixed' | 'down'; vol: 'calm' | 'normal' | 'wild' } }) {
+  const row = (dim: 'trend' | 'vol', k: string, label: string) => {
+    const c = (p.cells[dim] as Record<string, { n: number; mean: number; z?: number }>)[k], v = (p.verdicts[dim] as Record<string, string>)[k], w = (p.weights[dim] as Record<string, number>)[k]
+    const isNow = now && (dim === 'trend' ? now.trend === k : now.vol === k)
+    return (
+      <tr key={dim + k} style={isNow ? { fontWeight: 700 } : undefined}>
+        <td>{label}{isNow ? ' (now)' : ''}</td><td className="r">{c.n}</td><td className={`r ${cls(c.mean)}`}>{pct(c.mean)}</td>
+        <td className={VERDICT[v]?.[1]}>{VERDICT[v]?.[0] ?? v}{c.z != null ? <span className="muted"> · z {c.z.toFixed(1)}</span> : null}</td><td className="r">{w === 1 ? '1×' : `${w.toFixed(2)}×`}</td>
+      </tr>
+    )
+  }
+  return (
+    <div style={{ marginTop: 8 }}>
+      <b>Market types</b> <Info>Every past trade is tagged with the market it was bought into (trend and volatility of Bitcoin, or of the index for shares, from days that had already closed). Each type is always compared against all the others: a difference only counts (✓) with 30+ trades, a gap of 2.5+ standard errors with same-day trades counted once, and the same direction in both the older and newer half of the history. Confirmed differences change the size of a trade (0.25× to 1.5×), they never switch the rule off.</Info>
+      <span className="muted"> · {p.summary}</span>
+      <div className="table-scroll"><table className="table small" style={{ marginTop: 4 }}>
+        <thead><tr><th>Market</th><th className="r">Trades</th><th className="r">Avg after costs</th><th>Compared with the other types</th><th className="r">Size</th></tr></thead>
+        <tbody>
+          {(['up', 'mixed', 'down'] as const).map(k => row('trend', k, TREND_TXT[k]))}
+          {(['calm', 'normal', 'wild'] as const).map(k => row('vol', k, VOL_TXT[k]))}
+        </tbody>
+      </table></div>
+    </div>
+  )
 }
 
-function RigorBox({ g }: { g: Rigor }) {
+function RigorBox({ g, now }: { g: Rigor; now?: { trend: 'up' | 'mixed' | 'down'; vol: 'calm' | 'normal' | 'wild' } }) {
   const years = Object.entries(g.years || {})
+  const keys = (Object.keys(CHECK_TEXT) as (keyof Rigor['checks'])[]).filter(k => g.checks[k] !== undefined)
   return (
     <div className="explain-box small" style={{ marginTop: 8 }}>
-      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{Object.values(g.checks).filter(Boolean).length} of 4 passed</span>}</div>
+      <div><b>Professional checks</b> {g.passedAll ? <span className="tag green">All passed</span> : <span className="tag">{keys.filter(k => g.checks[k]).length} of {keys.length} passed</span>}{g.v !== 2 && <span className="muted"> · made under the older checks, re-checked at the next daily re-test</span>}</div>
       <ul className="lab-events" style={{ margin: '6px 0' }}>
-        {(Object.keys(CHECK_TEXT) as (keyof Rigor['checks'])[]).map(k => (
+        {keys.map(k => (
           <li key={k}>{g.checks[k] ? '✓' : '✗'} {CHECK_TEXT[k][0]} <Info>{CHECK_TEXT[k][1]}</Info>
-            <span className="muted"> · {k === 'random' ? `random runs beat it ${pct0(g.randomP)} of the time` : k === 'doubleFee' ? `${pct(g.meanNet)} a trade after one set of costs` : k === 'neighbours' ? `${g.neighbours.up} of ${g.neighbours.n} other settings make money` : `${pct0(g.dsr)} after ${g.trials.toLocaleString()} rules tried`}</span></li>
+            <span className="muted"> · {k === 'random' ? `random runs beat it ${pct0(g.randomP)} of the time${g.edgeVsRandom != null ? `; ${pct(g.edgeVsRandom)} a trade better than random` : ''}` : k === 'index' ? `${pct(g.vsIndex ?? 0)} a trade above the index after costs` : k === 'doubleFee' ? `${pct(g.meanNet)} a trade after one set of costs` : k === 'neighbours' ? `${g.neighbours.up} of ${g.neighbours.n} other settings make money` : `${pct0(g.dsr)} after ${g.trials.toLocaleString()} rules tried`}</span></li>
         ))}
       </ul>
       <div className="muted">Daily Sharpe {g.sharpe.toFixed(2)} over {g.days.toLocaleString()} days · spread across its open trades: {pct(g.annual)} a year, worst fall {pct0(g.maxDD)} · worst fall in 95% of shuffled trade orders at 10% a trade: {pct0(g.shuffleDD)}</div>
       {years.length > 0 && <div className="muted">By year (a trade, after costs): {years.map(([y, o]) => <span key={y} className={cls(o.mean)}>{y} {pct(o.mean)} ({o.n}) </span>)}</div>}
+      {g.regime && <RegimeBox p={g.regime} now={now} />}
     </div>
   )
 }
@@ -416,8 +452,12 @@ function downloadTrades(a: Account, lab: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+type RegimeNow = { trend: 'up' | 'mixed' | 'down'; vol: 'calm' | 'normal' | 'wild' }
+const NowCtx = createContext<RegimeNow | undefined>(undefined)
+
 function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: boolean }) {
   const live = liveRecord(r)
+  const now = useContext(NowCtx)
   return (
     <div className={`lab-rule ${small ? 'small' : ''}`}>
       <div className="lab-rule-head"><span className={`tag ${r.status === 'champion' ? 'green' : ''}`}>{title}</span>{r.reason && <span className="muted small">{r.reason}</span>}</div>
@@ -429,7 +469,7 @@ function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: bool
         {r.vsIndex && <span>Versus the market index: <b className={cls(r.vsIndex.mean)}>{pct(r.vsIndex.mean)}</b> a trade over the same days, before costs</span>}
         <span>Live on paper: {live.n ? <><b className={cls(live.mean)}>{pct(live.mean)}</b> a trade over {live.n}, won {pct0(live.win)}</> : 'no closed trades yet'}</span>
       </div>
-      {r.rigor && <RigorBox g={r.rigor} />}
+      {r.rigor && <RigorBox g={r.rigor} now={now} />}
     </div>
   )
 }

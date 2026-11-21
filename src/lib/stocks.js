@@ -57,4 +57,5 @@ export const STOCK_EXPLORE = {
   accounts: STOCK_ACCOUNTS,
   margin: STOCK.margin, slippage: STOCK.slippage, maxPosition: STOCK.maxPosition, maxOpen: STOCK.maxOpen,
   maxInvested: STOCK.maxInvested, refCost: STOCK.refCost, daysPerBar: STOCK.daysPerBar,
+  asset: 'share',
 }

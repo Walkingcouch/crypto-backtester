@@ -7,7 +7,7 @@
 //  - Each idea gets ONE look at the held-back last 180 days, and only once it clears a bar that
 //    RISES with the number of ideas tried (the expected best t-score of that many coin flips).
 //  - Simpler ideas are preferred: each extra condition costs fitness.
-import { assess } from './rigor.js'
+import { assess, RIGOR_V } from './rigor.js'
 import { comboId, describeCombo, HOLDS, randomCond, STOPS, validCombo } from './blocks.js'
 import { DAY, events, LAB, stats } from './lab.js'
 
@@ -89,7 +89,7 @@ export function evolve(data, S = EXPLORE, state, now) {
     const id = comboId(spec)
     if (seen.has(id)) continue
     seen.add(id); ex.tried++; added++
-    const full = { kind: 'combo', ...spec }
+    const full = { kind: 'combo', ...spec, ...(S.asset ? { asset: S.asset } : {}) }
     const ev = events(full, data)
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     if (train.n < S.minTrades) continue
@@ -124,17 +124,20 @@ export function evolve(data, S = EXPLORE, state, now) {
     if (p.passed && !ex.graduates.some(g => g.id === p.id)) ex.graduates.push({ id: p.id, spec: p.spec, text: p.text, train: p.train, valid: p.valid, all: p.all, rigor: p.rigor, gen: p.gen, at: now })
   }
   ex.log = ex.log.slice(-60)
+  // one entry per idea (the same idea could graduate twice from separate population slots)
+  ex.graduates = ex.graduates.filter((g, i, a) => a.findIndex(x => x.id === g.id) === i)
+  if (S.asset) for (const g of ex.graduates) { g.spec = { ...g.spec, asset: S.asset }; g.text = describeCombo(g.spec) }
   ex.graduates.sort((a, b) => b.train.t - a.train.t)
   ex.graduates = ex.graduates.slice(0, S.graduates)
   ex.lastRun = { at: now, added, bar }
 
-  // graduates from before the professional checks existed must pass them too, or they leave
+  // graduates checked under older checks (or none) must pass the current ones, or they leave
   ex.graduates = ex.graduates.filter(g => {
-    if (g.rigor) return true
+    if (g.rigor?.v === RIGOR_V) return true
     const ev = events(g.spec, data)
     const [c] = assess([{ id: g.id, spec: g.spec, ev, pass: true, train: g.train }], data, { cost: S.refCost, trials: ex.tried, family: () => g.id })
     g.rigor = c.rigor
-    if (!c.pass) ex.log.push({ t: now, id: g.id, text: g.text, trainT: g.train.t, valid: g.valid, passed: false, rigor: c.rigor, note: 'removed: failed the new professional checks' })
+    if (!c.pass) ex.log.push({ t: now, id: g.id, text: g.text, trainT: g.train.t, valid: g.valid, passed: false, rigor: c.rigor, note: 'removed: failed the updated professional checks (real daily ups and downs, beating random by more than costs, beating the index)' })
     return c.pass
   })
   // refresh graduates' full-period stats (the cost gate uses them) and hand them to the coach

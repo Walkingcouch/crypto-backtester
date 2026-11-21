@@ -8,7 +8,15 @@ export interface LabRule {
 export interface Rigor {
   days: number; sharpe: number; meanNet: number; annual: number; maxDD: number; shuffleDD: number; randomP: number; randomMean: number
   neighbours: { n: number; up: number }; dsr: number; trials: number; years: Record<string, { n: number; mean: number }>
-  checks: { random: boolean; doubleFee: boolean; neighbours: boolean; deflated: boolean }; passedAll: boolean
+  checks: { random: boolean; doubleFee: boolean; neighbours: boolean; deflated: boolean; index?: boolean }; passedAll: boolean
+  v?: number; edgeVsRandom?: number; vsIndex?: number; regime?: RegimeProfile | null
+}
+export type RegimeVerdict = 'suits' | 'struggles' | 'leans better' | 'leans worse' | 'same' | 'too few'
+export interface RegimeProfile {
+  n: number; mean: number; summary: string
+  cells: { trend: Record<'up' | 'mixed' | 'down', { n: number; mean: number; z?: number }>; vol: Record<'calm' | 'normal' | 'wild', { n: number; mean: number; z?: number }> }
+  verdicts: { trend: Record<'up' | 'mixed' | 'down', RegimeVerdict>; vol: Record<'calm' | 'normal' | 'wild', RegimeVerdict> }
+  weights: { trend: Record<'up' | 'mixed' | 'down', number>; vol: Record<'calm' | 'normal' | 'wild', number> }
 }
 export interface Found { id: string; text: string; H: number; pass: boolean; train: Stats; valid: Stats; all: Stats }
 export interface Position { base: string; v: number; units: number; entryPx: number; fillPx: number; costUsd: number; t: number; stop: number; exitT: number; spread: number; est: number; cost: number; estimated?: boolean }
@@ -24,6 +32,7 @@ export interface LabEvent { t: number; kind: string; text: string }
 export interface LabState {
   learning?: { v?: number; since: number; active: number; eligible: number; benched: number; minHoldDays?: number; failAfter?: number }
   version: number; created: number; lastRun: number | null; lastSignalDay: number; lastCoach: number; nextV: number
+  regimeNow?: Record<string, { trend: "up" | "mixed" | "down"; vol: "calm" | "normal" | "wild" }>
   rules: LabRule[]; shadow: { v: number; base: string; entry: number; t: number; stop: number; exitT: number }[]
   events: LabEvent[]; history: ({ t: number } & Record<string, number>)[]
   accounts: Record<string, Account>; prices?: Record<string, number>; found?: Found[]; coinsScanned?: string[]; audPerUsd?: number

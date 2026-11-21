@@ -16,6 +16,7 @@
 //  rev    overreaction reversal after an unusually hard 1-hour fall
 // Each with and without a daily-trend filter (previous close above its 20-day average).
 import { assess, countTrials } from './rigor.js'
+import { regimeAt, regimeWeight } from './regime.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
 import { coach, estimate, feeFrac, stats } from './lab.js'
 import { STOCK_ACCOUNTS } from './stocks.js'
@@ -180,7 +181,7 @@ export function sdEvents(r, data) {
         if (j - e + 1 >= hold || F.lastOfDay[j]) { exit = coin.c[j]; break }
       }
       if (!Number.isFinite(exit)) break
-      out.push({ base: coin.base, t: coin.t[i], exitT: coin.t[j] + HOUR, g: exit / entry - 1 })
+      out.push({ base: coin.base, m: coin.market || '', t: coin.t[i], exitT: coin.t[j] + HOUR, g: exit / entry - 1 })
       busy = j + 1
     }
   }
@@ -296,7 +297,7 @@ export function stepStockDay(state, market, now, S = SDT) {
 
   // 1. daily re-test + walk-forward (needs the full history); practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => f.rigor)
+  const unchecked = state.found?.length && !state.found.some(f => f.rigor?.v === 2)
   if (market.full && market.coins.length && (now - state.lastCoach >= S.coachEveryDays * DAY - 2 * HOUR || noChamp || unchecked)) {
     const data = { coins: market.coins }
     const found = discoverStockDay(data, S, state)
@@ -356,7 +357,8 @@ export function stepStockDay(state, market, now, S = SDT) {
         const sizeMul = (after ? 0.5 : 1) * (value(a) < a.peakAud * (1 - S.ddCut) ? 0.5 : 1)
         const dd = value(a) / (state.day.start[a.id] || a.startAud) - 1
         if (dd <= -(r.practice ? S.practiceLossLimit : S.dailyLossLimit)) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
-        enter(a, r, coin.base, p, sp, { ...pos0, sizeMul }, market, now, S, log)
+        const regime = regimeAt({ coins: market.coins }, coin.market || '', entryT), rw = regimeWeight(r.rigor?.regime, regime)
+        enter(a, r, coin.base, p, sp, { ...pos0, sizeMul, regime, rw }, market, now, S, log)
       }
     }
   }
@@ -381,6 +383,7 @@ export function stepStockDay(state, market, now, S = SDT) {
     log.sort((a, b) => a.t - b.t)
     if (log.length > 3000) log.splice(0, log.length - 3000)
   }
+  state.regimeNow = Object.fromEntries(['US', 'ASX'].map(mk => [mk, regimeAt({ coins: market.coins }, mk, now + DAY)]).filter(([, v]) => v))
   state.lastRun = now
   return state
 }
@@ -394,7 +397,7 @@ function enter(a, r, base, p, sp, pos0, market, now, S, log) {
   const cashUsd = a.cashAud / rate
   const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
   const invested = equity - cashUsd
-  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested) * (pos0.sizeMul ?? 1)
+  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp * (pos0.rw ?? 1), cashUsd, S.maxInvested * equity - invested) * (pos0.sizeMul ?? 1)
   if (a.positions.length >= (r.practice ? S.practiceMaxOpen : S.maxOpen) || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fee = feeFrac(a, alloc, p, rate)
   const cost = 2 * fee + spread + 2 * S.slippage

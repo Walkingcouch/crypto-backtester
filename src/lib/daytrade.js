@@ -13,6 +13,7 @@
 //  mr      mean reversion to the 24-hour average, only in calm markets
 // Each with and without a daily-trend filter (price above its ~20-day average).
 import { assess, countTrials } from './rigor.js'
+import { regimeAt, regimeWeight } from './regime.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
 import { coach, estimate, stats } from './lab.js'
 
@@ -276,7 +277,7 @@ export function stepDay(state, market, now, S = DT) {
 
   // 1. daily re-test + walk-forward; practice mode while nothing passes
   const noChamp = !state.rules.some(r => r.status === 'champion') || (S.practiceRules && state.learning?.v !== 2 && !state.rules.some(r => r.status === 'champion' && !r.practice))
-  const unchecked = state.found?.length && !state.found.some(f => f.rigor)
+  const unchecked = state.found?.length && !state.found.some(f => f.rigor?.v === 2)
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
     const found = discoverDay(data, S, state)
     state.walk = walkForward(found, data, S)
@@ -331,7 +332,8 @@ export function stepDay(state, market, now, S = DT) {
           const sizeMul = (after ? 0.5 : 1) * (value(a) < a.peakAud * (1 - S.ddCut) ? 0.5 : 1)
           const dd = value(a) / (state.day.start[a.id] || a.startAud) - 1
           if (dd <= -(r.practice ? S.practiceLossLimit : S.dailyLossLimit)) { a.blocked.limits++; push(a.lastBlocked, { t: entryT, base: coin.base, v: r.v, why: `daily loss limit (${pct(dd)} today)` }, 30); continue }
-          enterDay(a, r, coin.base, p, sp, { ...pos0, sizeMul }, market, now, S, log)
+          const regime = regimeAt(data, '', entryT), rw = regimeWeight(r.rigor?.regime, regime)
+          enterDay(a, r, coin.base, p, sp, { ...pos0, sizeMul, regime, rw }, market, now, S, log)
         }
       }
     }
@@ -345,6 +347,7 @@ export function stepDay(state, market, now, S = DT) {
   // 5. valuation
   push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 1000)
   for (const a of Object.values(state.accounts)) { a.valueAud = value(a); a.valueUsd = value(a) / rate }
+  state.regimeNow = Object.fromEntries([['', regimeAt(market.deep ? { coins: market.deep } : data, '', now + DAY)]].filter(([, v]) => v))
   state.audPerUsd = rate
   state.prices = {}
   for (const a of Object.values(state.accounts)) for (const pos of a.positions) if (price(pos.base) > 0) state.prices[pos.base] = price(pos.base)
@@ -363,7 +366,7 @@ function enterDay(a, r, base, p, sp, pos0, market, now, S, log) {
   const cashUsd = a.cashAud / market.audPerUsd
   const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
   const invested = equity - cashUsd
-  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested) * (pos0.sizeMul ?? 1)
+  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp * (pos0.rw ?? 1), cashUsd, S.maxInvested * equity - invested) * (pos0.sizeMul ?? 1)
   if (a.positions.length >= (r.practice ? S.practiceMaxOpen : S.maxOpen) || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fill = p * (1 + spread / 2 + S.slippage)
   const units = alloc * (1 - a.fee) / fill

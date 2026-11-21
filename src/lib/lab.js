@@ -14,6 +14,7 @@
 //  - Risk limits are fixed here and are never changed by the loop.
 
 import { assess, countTrials } from './rigor.js'
+import { regimeAt, regimeWeight } from './regime.js'
 import { btcContext, comboSignal, describeCombo } from './blocks.js'
 
 export const DAY = 86_400_000
@@ -455,7 +456,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   // 2. the coach, weekly
   const ruleList = S.ruleSet || S.extraRules
   const newRules = ruleList && !ruleList().every(r => state.found?.some(f => f.id === r.id))   // rule list changed: re-test now
-  const unchecked = state.found?.length && !state.found.some(f => f.rigor)     // tested before the professional checks existed
+  const unchecked = state.found?.length && !state.found.some(f => f.rigor?.v === 2)     // tested before the professional checks existed
   if (now - state.lastCoach >= S.coachEveryDays * DAY - 6 * 3_600_000 || newRules || unchecked) {
     const found = (opts.discover || discover)(data, S, state, now)
     coach(state, found, now, S)
@@ -503,6 +504,7 @@ export function step(state, market, now, S = LAB, opts = {}) {
   const value = a => a.cashAud + rate * a.positions.reduce((s, pos) => s + pos.units * (price(pos.base) || pos.entryPx), 0)   // AUD
   push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 600)
   for (const a of Object.values(state.accounts)) { a.valueAud = value(a); a.valueUsd = value(a) / rate }
+  state.regimeNow = Object.fromEntries(['', 'US', 'ASX'].map(m => [m, regimeAt({ coins: market.coins, bench: market.bench }, m, now + 86_400_000)]).filter(([, v]) => v))
   state.audPerUsd = market.audPerUsd
   // latest prices of everything held, for the Positions table
   state.prices = {}
@@ -521,7 +523,11 @@ function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * 
   const cashUsd = a.cashAud / rate
   const equity = cashUsd + a.positions.reduce((s, x) => s + x.units * (market.live[x.base] || x.entryPx), 0)
   const invested = equity - cashUsd
-  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp, cashUsd, S.maxInvested * equity - invested)
+  // market type: a confirmed better / worse fit scales the risk taken (0.25× to 1.5×), never to zero
+  const mkt = market.coins.find(c => c.base === base)?.market || ''
+  const regime = regimeAt({ coins: market.coins, bench: market.bench }, mkt, now)
+  const rw = regimeWeight(r.rigor?.regime, regime)
+  const alloc = Math.min(S.maxPosition * equity, S.riskPerTrade * equity / sp * rw, cashUsd, S.maxInvested * equity - invested)
   if (a.positions.length >= S.maxOpen || alloc < 1) { a.blocked.limits++; note('risk limits (too many open, or not enough cash)'); return }
   const fee = feeFrac(a, alloc, p, rate)     // on this order's size (minimum fees bite on small orders)
   const cost = 2 * fee + spread + 2 * S.slippage
@@ -534,7 +540,7 @@ function enter(a, r, base, p, sp, market, now, S, log, exitT = now + r.spec.H * 
   const fill = p * (1 + spread / 2 + S.slippage)
   const units = alloc * (1 - fee) / fill
   a.cashAud -= alloc * rate
-  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT, spread, est, cost, estimated })
+  a.positions.push({ base, v: r.v, units, entryPx: p, fillPx: fill, costUsd: alloc, t: now, stop: p * (1 - sp), exitT, spread, est, cost, estimated, regime, rw })
   log('trade', `${a.owner}: bought ${base} with ${(alloc / equity * 100).toFixed(0)}% of the account (rule v${r.v}; estimate ${pct(est)} vs cost ${pct(cost)}${estimated ? `, spread estimated at ${pct(spread)} because ${base} isn't in ${a.exchange}'s public price feed` : ''}).`)
 }
 
