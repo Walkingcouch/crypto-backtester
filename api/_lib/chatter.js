@@ -24,6 +24,31 @@ async function get(url, { json = false, ms = 7000 } = {}) {
   } finally { clearTimeout(t) }
 }
 
+// Reddit blocks anonymous requests from cloud servers. With a free Reddit "script" app
+// (REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET in Vercel) the site signs in app-only and reads through
+// oauth.reddit.com instead, which works from servers. The token lasts about a day.
+let redditToken = null
+async function redditAuth() {
+  const id = process.env.REDDIT_CLIENT_ID, secret = process.env.REDDIT_CLIENT_SECRET
+  if (!id || !secret) return null
+  if (redditToken && redditToken.exp > Date.now() + 60_000) return redditToken.value
+  const r = await fetch('https://www.reddit.com/api/v1/access_token', {
+    method: 'POST', body: 'grant_type=client_credentials',
+    headers: { authorization: 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64'), 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA },
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok || !j.access_token) throw new Error(`Reddit sign-in failed (${r.status}${j.error ? `: ${j.error}` : ''})`)
+  redditToken = { value: j.access_token, exp: Date.now() + (j.expires_in || 3600) * 1000 }
+  return redditToken.value
+}
+async function redditJSON(sub) {
+  const token = await redditAuth()
+  if (!token) return get(`https://www.reddit.com/r/${sub}/hot.json?limit=40&raw_json=1`, { json: true })
+  const r = await fetch(`https://oauth.reddit.com/r/${sub}/hot?limit=40&raw_json=1`, { headers: { authorization: `Bearer ${token}`, 'user-agent': UA } })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json()
+}
+
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'", '#8217': '’', '#8216': '‘', '#8220': '“', '#8221': '”', '#8211': '–', '#8212': '—', hellip: '…' }
 function clean(s = '') {
   return s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -74,7 +99,7 @@ export async function collect() {
   for (const sub of SUBREDDITS) { social.push(await redditSub(sub)); await new Promise(r => setTimeout(r, 400)) }
   async function redditSub(sub) {
     try {
-      const j = await get(`https://www.reddit.com/r/${sub}/hot.json?limit=40&raw_json=1`, { json: true })
+      const j = await redditJSON(sub)
       const items = (j?.data?.children || []).map(c => c.data).filter(d => d && !d.stickied).map(d => ({
         title: d.title, link: `https://www.reddit.com${d.permalink}`, summary: (d.selftext || '').slice(0, 200),
         time: d.created_utc * 1000, score: d.score, comments: d.num_comments, source: `r/${sub}`,

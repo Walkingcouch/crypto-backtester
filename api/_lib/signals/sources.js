@@ -312,6 +312,7 @@ export async function centralBanks({ seen = [] } = {}) {
 // CoinGecko's trending list is a "trending" event. Both are only signals to be TESTED by the report
 // card: research mostly finds social buzz follows price moves rather than leading them.
 const CROWD_SKIP = new Set(['ONE', 'NOT', 'SUN', 'GAS', 'HOT', 'THE', 'ALL', 'ANY', 'NEW', 'BIG', 'LOW', 'TOP', 'NOW', 'WIN', 'USD', 'ETF', 'CEO', 'SEC', 'FED', 'ATH', 'API', 'NFT', 'DAO', 'DEX', 'CEX', 'KYC', 'GDP', 'CPI', 'IMO', 'LOL', 'WTF', 'FUD', 'APE', 'MEME', 'PUMP', 'TRUMP', 'MOVE', 'OPEN', 'REAL', 'SAFE', 'FREE', 'TRUST', 'HOME', 'LAYER', 'BANK', 'GOLD'])
+const STOCKISH = new Set('AAPL AMZN MSFT GOOGL META NVDA TSLA AMD AVGO QCOM INTC MU ORCL PLTR CRWV COHR TSM SKHY NFLX COIN MSTR HOOD SPY QQQ SQQQ TQQQ SOXS SOXL IWM EWY SPCX CBRS DRAM MRNA BE'.split(' '))
 export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date.now() } = {}) {
   const chatter = await collect()
   const posts = chatter.social || []
@@ -321,7 +322,7 @@ export async function cryptoCrowd({ prev = {}, collect, aliases = {}, now = Date
   try {
     const t = JSON.parse(await get('https://data-api.binance.vision/api/v3/ticker/24hr'))
     bases = t.filter(x => x.symbol.endsWith('USDT')).sort((a, b) => +b.quoteVolume - +a.quoteVolume).map(x => x.symbol.slice(0, -4))
-      .filter(b => /^[A-Z]{3,10}$/.test(b) && !/USD|EUR|^U$/.test(b) && !CROWD_SKIP.has(b)).slice(0, 80)
+      .filter(b => /^[A-Z]{3,10}$/.test(b) && !/USD|EUR|^U$/.test(b) && !CROWD_SKIP.has(b) && !(/^[A-Z]{2,5}B$/.test(b) && STOCKISH.has(b.slice(0, -1)))).slice(0, 80)
   } catch { bases = Object.keys(aliases) }
   for (const b of Object.keys(aliases)) if (!bases.includes(b)) bases.push(b)
   const counts = {}
