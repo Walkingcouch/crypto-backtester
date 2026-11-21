@@ -20,7 +20,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!supabase) return
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); loadName(data.session); setReady(true) })
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); loadName(s) })
-    return () => sub.subscription.unsubscribe()
+    // signing in from the email link happens in another tab: pick the session up here as soon as
+    // that tab saves it (storage event), or when this tab is looked at again
+    const recheck = () => { supabase!.auth.getSession().then(({ data }) => { setSession(cur => (cur?.access_token === data.session?.access_token ? cur : (loadName(data.session), data.session))) }) }
+    const onStorage = (e: StorageEvent) => { if (!e.key || e.key.startsWith('sb-')) recheck() }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', recheck)
+    document.addEventListener('visibilitychange', recheck)
+    return () => { sub.subscription.unsubscribe(); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', recheck); document.removeEventListener('visibilitychange', recheck) }
   }, [])
 
   return <Ctx.Provider value={{ session, name, ready, refreshName: () => loadName(session) }}>{children}</Ctx.Provider>
