@@ -16,6 +16,14 @@ export default async function handler(req, res) {
     target = `${BASE}/v2/latest/${coin}`
   } else if (feed === 'v1') target = `${BASE}/latest`
 
+  const check = (url.searchParams.get('check') || '').toLowerCase()
+  if (/^[a-z0-9]{1,15}$/.test(check)) {             // which public CoinSpot sources know this coin
+    const out = {}
+    for (const [k, u] of Object.entries({ latest: `${BASE}/v2/latest/${check}`, buyprice: `${BASE}/v2/buyprice/${check}`, sellprice: `${BASE}/v2/sellprice/${check}`, page: `https://www.coinspot.com.au/buy/${check}` })) {
+      try { const r = await fetch(u, { redirect: 'manual', headers: { 'user-agent': 'crypto-backtester' } }); out[k] = { status: r.status, loc: r.headers.get('location'), body: (await r.text()).slice(0, 160) } } catch (e) { out[k] = String(e) }
+    }
+    return res.status(200).json(out)
+  }
   try {
     const r = await fetch(target, { headers: { accept: 'application/json', 'user-agent': 'crypto-backtester' } })
     const text = await r.text()
