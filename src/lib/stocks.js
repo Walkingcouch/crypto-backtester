@@ -58,4 +58,5 @@ export const STOCK_EXPLORE = {
   margin: STOCK.margin, slippage: STOCK.slippage, maxPosition: STOCK.maxPosition, maxOpen: STOCK.maxOpen,
   maxInvested: STOCK.maxInvested, refCost: STOCK.refCost, daysPerBar: STOCK.daysPerBar,
   asset: 'share',
+  benchmarks: STOCK.benchmarks,   // so every bred idea is also checked against the index over the same days
 }

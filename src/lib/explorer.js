@@ -69,6 +69,7 @@ export function evolve(data, S = EXPLORE, state, now) {
   const last = Math.max(...data.coins.map(c => c.t[c.t.length - 1]))
   const cut = last - S.validDays * DAY
   const seen = new Set(ex.seen)
+  if (S.benchmarks && !data.bench) { data.bench = {}; for (const [m, b] of Object.entries(S.benchmarks)) data.bench[m] = data.coins.find(c => c.base === b) }
 
   // breed
   const pop = ex.population
