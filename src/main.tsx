@@ -6,6 +6,7 @@ import { AuthProvider } from './lib/auth'
 import { CurrencyProvider } from './lib/currency'
 import { BrokerProvider } from './lib/brokers'
 import './styles.css'
+import { watchStackTables } from './lib/stackTables'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -20,3 +21,4 @@ createRoot(document.getElementById('root')!).render(
     </BrowserRouter>
   </StrictMode>,
 )
+watchStackTables()

@@ -152,7 +152,7 @@ export default function AutomationPanel() {
               <select className="input" disabled={!can} defaultValue={S.share_source_lab} onChange={e => setEdit(x => ({ ...x, share_source_lab: e.target.value }))} style={{ width: '100%' }}>
                 <option value="stocks">Shares swing</option><option value="stocks-explore">Shares Explorer</option><option value="stocks-day">Shares day</option></select></label>
             <label className="small" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              <input type="checkbox" disabled={!can} defaultChecked={S.require_proven} onChange={e => setEdit(x => ({ ...x, require_proven: e.target.checked }))} /> Live: proven rules only</label>
+              <input type="checkbox" style={{ width: 18, height: 18, flex: "none", margin: 0 }} disabled={!can} defaultChecked={S.require_proven} onChange={e => setEdit(x => ({ ...x, require_proven: e.target.checked }))} /> Live: proven rules only</label>
           </div>
           {can && <button className="btn btn-primary btn-sm" disabled={busy || !Object.keys(edit).length} style={{ marginTop: 10 }} onClick={() => act({ action: 'settings', patch: edit }).then(() => setEdit({}))}>Save settings</button>}
           <p className="muted small">{S.updated_at ? <>Last changed {new Date(S.updated_at).toLocaleString('en-AU', { timeZone: 'Australia/Darwin' })}{S.updated_by ? ` by ${S.updated_by}` : ''}.</> : 'Using the default settings until they are first saved.'}</p>

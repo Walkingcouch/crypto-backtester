@@ -271,7 +271,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             {accts.map(a => (
               <div key={a.id} style={{ marginBottom: 14 }}>
                 <h3>{a.exchange} <span className="muted small">· cash {money(a.cashAud)}</span></h3>
-                {a.positions.length ? <div className="table-wrap"><table className="record">
+                {a.positions.length ? <div className="table-wrap"><table className="record stack-sm">
                   <thead><tr><th>{shares ? 'Share' : 'Coin'}</th><th>Price: bought → now</th><th>Value: put in → now <Info>Now = what you'd get selling right now, after the exchange fee and price gap.</Info></th><th>Stop-loss <Info>If the price falls to this level, the bot sells. Set when bought and never moved.</Info></th><th>Sells by <Info>If the stop-loss hasn't been hit, the coin is sold at this time whatever the price.</Info></th></tr></thead>
                   <tbody>{a.positions.map(p => {
                     const now = state.prices?.[p.base]
@@ -287,7 +287,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
                   : <p className="muted small">Nothing held: waiting for the next signal that clears the cost gate.</p>}
                 {a.closed.length > 0 && <Disclosure title={`Finished trades (${a.stats.n})`}>
                   <p className="small"><button className="btn small" onClick={() => downloadTrades(a, v.title)}>Download trades (CSV)</button> <span className="muted">R = result as a multiple of the risk taken (distance to the stop). Expected = what the rule normally makes on that {shares ? 'share' : 'coin'}.</span></p>
-                  <div className="table-wrap"><table className="record">
+                  <div className="table-wrap"><table className="record stack-sm">
                     <thead><tr><th>{shares ? 'Share' : 'Coin'}</th><th>Result after costs</th><th>R</th><th>Expected</th><th>Buy price</th><th>Sell price</th><th>Why sold</th><th>Sold</th></tr></thead>
                     <tbody>{a.closed.slice().reverse().map((c, i) => (
                       <tr key={i}><td><b>{c.base}</b>{c.v ? <div className="muted small">rule v{c.v}</div> : null}</td><td className={cls(c.net)}>{pct(c.net)}</td><td className={cls(c.rMult ?? 0)}>{c.rMult != null ? `${c.rMult > 0 ? '+' : ''}${c.rMult.toFixed(2)}R` : '–'}</td><td className="muted">{c.expected != null ? pct(c.expected) : '–'}</td><td>{px(c.entryPx)}</td><td>{px(c.exitPx)}</td><td>{c.why === 'stop' ? 'Stop-loss hit' : 'Time limit'}</td><td>{when(c.exitT)}</td></tr>
@@ -367,7 +367,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             <section className="card">
               <Disclosure title={<b>{v.kind === 'explore' ? `Graduated ideas (${state.found.length})` : `All ${state.found.length} rules tested`}</b>}>
                 <p className="muted small">{v.tested}</p>
-                <div className="table-wrap"><table className="record">
+                <div className="table-wrap"><table className="record stack-sm">
                   <thead><tr><th>Rule</th><th>Older data</th><th>Last {S.validDays} days</th><th>Passed</th></tr></thead>
                   <tbody>{state.found.slice(0, 15).map(f => (
                     <tr key={f.id}><td style={{ minWidth: 200, whiteSpace: 'normal' }}>{f.text}</td>
@@ -416,7 +416,7 @@ function RegimeBox({ p, now }: { p: NonNullable<Rigor['regime']>; now?: { trend:
     <div style={{ marginTop: 8 }}>
       <b>Market types</b> <Info>Every past trade is tagged with the market it was bought into (trend and volatility of Bitcoin, or of the index for shares, from days that had already closed). Each type is always compared against all the others: a difference only counts (✓) with 30+ trades, a gap of 2.5+ standard errors with same-day trades counted once, and the same direction in both the older and newer half of the history. Confirmed differences change the size of a trade (0.25× to 1.5×), they never switch the rule off.</Info>
       <span className="muted"> · {p.summary}</span>
-      <div className="table-scroll"><table className="table small" style={{ marginTop: 4 }}>
+      <div className="table-scroll"><table className="table small stack-sm" style={{ marginTop: 4 }}>
         <thead><tr><th>Market</th><th className="r">Trades</th><th className="r">Avg after costs</th><th>Compared with the other types</th><th className="r">Size</th></tr></thead>
         <tbody>
           {(['up', 'mixed', 'down'] as const).map(k => row('trend', k, TREND_TXT[k]))}
@@ -504,7 +504,7 @@ function ExploreCard({ state }: { state: LabState }) {
         <div className="kpi"><div className="label">Graduated</div><div className="value">{ex.graduates.length}</div><div className="sub">may trade on paper</div></div>
       </div>
       <h3>Best ideas so far (on older data)</h3>
-      <div className="table-wrap"><table className="record">
+      <div className="table-wrap"><table className="record stack-sm">
         <thead><tr><th>Idea</th><th>Trades</th><th>Avg after costs</th><th>t-score</th><th>Status</th></tr></thead>
         <tbody>{ex.population.slice(0, 10).map(p => (
           <tr key={p.id}><td style={{ minWidth: 220, whiteSpace: 'normal' }}>{p.text}</td><td>{p.train.n}</td>
@@ -529,7 +529,7 @@ function WalkCard({ state, costs }: { state: LabState; costs: string }) {
     <section className="card">
       <h2>Walk-forward test <Info>Each month, the bot picks the rule that looked best over the previous 120 days only, then records what it actually earned that month. Stitched together, this is what the whole selection process would have made, with no hindsight.</Info></h2>
       <p className="muted small" style={{ marginTop: 0 }}>{w.total.n ? <>Following the process would have averaged <b className={cls(w.total.mean)}>{pct(w.total.mean, 2)}</b> a trade after {costs} over {w.total.n} trades ({pct0(w.total.win)} won).</> : 'Not enough history yet.'}</p>
-      <div className="table-wrap"><table className="record">
+      <div className="table-wrap"><table className="record stack-sm">
         <thead><tr><th>Month from</th><th style={{ textAlign: 'left' }}>Rule chosen</th><th>Trades</th><th>Avg a trade</th></tr></thead>
         <tbody>{w.months.slice().reverse().map(m => (
           <tr key={m.start}><td>{day(m.start)}</td><td style={{ minWidth: 220, whiteSpace: 'normal', textAlign: 'left' }}>{m.rule ?? <span className="muted">none looked worth it</span>}</td><td>{m.n}</td><td className={cls(m.mean)}>{m.n ? pct(m.mean, 2) : '–'}</td></tr>

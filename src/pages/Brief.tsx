@@ -62,7 +62,7 @@ export default function Brief() {
               <span className="step-badge">{l.late ? '⚠ late · ' : ''}ran {ago(l.updated)}{l.mode ? ` · ${l.mode}` : ''}</span>
               <h2><Link to={l.path}>{l.name}</Link></h2>
             </div>
-            {l.accounts && <div className="table-wrap"><table className="record">
+            {l.accounts && <div className="table-wrap"><table className="record stack-sm">
               <thead><tr><th>Account</th><th>Value</th><th>Today</th><th>Since start</th><th>Open</th><th>Closed (24 h)</th><th>All trades</th></tr></thead>
               <tbody>{l.accounts.map(a => (
                 <tr key={a.name}><td>{a.name}</td><td>{aud(a.value)}</td><td className={cls(a.today)}>{pct(a.today, 2)}</td><td className={cls(a.sinceStart)}>{pct(a.sinceStart, 2)}</td><td>{a.open}</td>

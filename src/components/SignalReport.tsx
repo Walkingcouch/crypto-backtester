@@ -44,7 +44,7 @@ export default function SignalReport() {
       {error && <div className="notice err small">{error}</div>}
       {!r && !error && <div className="muted small">Loading the report card…</div>}
       {r && (<>
-        <div className="table-wrap"><table className="record">
+        <div className="table-wrap"><table className="record stack-sm">
           <thead><tr><th>Stream</th><th>Grade <Info>A = passes all 4 checks at its best holding period, F = none. Needs at least 30 signals on 15+ different days to be graded.</Info></th><th>Signals tested</th><th>Best hold</th><th>Average a trade <Info>In the signal's direction, beyond the market index, after costs, at the best holding period.</Info></th><th>Won</th><th>Verdict</th></tr></thead>
           <tbody>{r.streams.map(s => {
             const h = s.best ? s.horizons[s.best] : null
@@ -69,7 +69,7 @@ export default function SignalReport() {
           {r.streams.filter(s => Object.values(s.horizons).some(h => h.n)).map(s => (
             <div key={s.stream} style={{ marginBottom: 14 }}>
               <h3 style={{ marginBottom: 4 }}>{s.name} {s.grade && <span className={`tag ${GRADE_TAG[s.grade]}`}>{s.grade}</span>}</h3>
-              <div className="table-wrap"><table className="record">
+              <div className="table-wrap"><table className="record stack-sm">
                 <thead><tr><th>Hold</th><th>Signals (days)</th><th>Average after costs</th><th>t-score</th><th>Random dates beat it</th><th>Older half / newer half</th>{s.stream.startsWith('pol-us') && <th>If bought on the trade date <Info>What the same trade would have made if you'd known on the day the politician traded, before the filing was public. The gap is what the filing delay costs.</Info></th>}<th>Checks</th></tr></thead>
                 <tbody>{Object.entries(s.horizons).map(([hd, h]) => (
                   <tr key={hd}><td>{hd} day{hd !== '1' ? 's' : ''}</td><td>{h.n} ({h.dates})</td><td className={cls(h.avg)}>{pct(h.avg)}</td><td>{h.t.toFixed(2)}</td>

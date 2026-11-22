@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { NavLink, Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
 import Brief from './pages/Brief'
 import Guide from './pages/Guide'
@@ -17,6 +18,8 @@ export default function App() {
   const here = loc.pathname === '/account' ? '/' : loc.pathname + loc.search
   const { session, name } = useAuth()
   const { cur, setCur } = useCurrency()
+  // phones: the tab row scrolls sideways, so bring the current page's tab into view
+  useEffect(() => { document.querySelector('.nav a.active')?.scrollIntoView({ inline: 'center', block: 'nearest' }) }, [loc.pathname])
   return (
     <>
       <header className="topbar">

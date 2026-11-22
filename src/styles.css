@@ -507,9 +507,13 @@ td.wrap { white-space: normal; }
   table.stack-sm, table.stack-sm tbody, table.stack-sm tr, table.stack-sm td { display: block; width: 100%; }
   table.stack-sm thead { display: none; }
   table.stack-sm tr { border-bottom: 1px solid var(--border); padding: 8px 0; }
-  table.stack-sm td { border: 0; padding: 3px 0 3px 76px !important; white-space: normal; min-width: 0 !important; position: relative; }
-  table.stack-sm td::before { content: attr(data-label); position: absolute; left: 0; top: 4px; width: 68px; color: var(--muted); font-size: 12px; font-weight: 500; }
-  table.stack-sm td:empty, table.stack-sm td[data-empty] { display: none; }
+  table.stack-sm td { border: 0; padding: 3px 0 3px 92px !important; white-space: normal; min-width: 0 !important; max-width: none !important; display: flow-root; text-align: left !important; }
+  table.stack-sm td:first-child { font-size: 15px; }
+  table.stack-sm td::before { content: attr(data-label); float: left; margin: 1px 0 0 -92px; width: 84px; line-height: 1.3; color: var(--muted); font-size: 12px; font-weight: 500; }
+  table.stack-sm td:empty, table.stack-sm td[data-label=""]:empty { display: none; }
+  table.stack-sm td[data-label=""] { padding-left: 0 !important; }
+  table.stack-sm td[data-label=""]::before { display: none; }
+  table.stack-sm tr.hl, table.stack-sm tr:hover { border-radius: 8px; }
   table.stack-sm td div[style] { max-width: none !important; }
 }
 /* phone: hide-sm must win over components that set their own display */
@@ -518,3 +522,8 @@ td.wrap { white-space: normal; }
 main.page { overflow-wrap: break-word; }
 .sm-meta span, .notice, .hint { overflow-wrap: anywhere; }
 @media (max-width: 560px) { .mini.checkline { flex: 1 1 100%; } }
+.table-scroll { overflow-x: auto; max-width: 100%; }
+code { overflow-wrap: anywhere; }
+pre { overflow-x: auto; max-width: 100%; }
+/* phones: fade the right edge of the sideways-scrolling tab row so it's clear there's more */
+@media (max-width: 720px) { .nav { mask-image: linear-gradient(to right, #000 85%, transparent); -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); padding-right: 24px; } }
