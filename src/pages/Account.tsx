@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
-import { signOut, useAuth } from '../lib/auth'
+import { arrivedByLink, supabase } from '../lib/supabase'
+import { handOff, signOut, useAuth } from '../lib/auth'
+import { codeOf, post as relayPost, sealFor, startWaiting } from '../lib/relay'
 import { AppLockSettings } from '../components/AppLock'
 
 // Signing in: the email has a link AND a 6-digit code. Typing the code signs in right here. If the
 // link is used instead (it opens a new tab), this tab notices the sign-in and carries on by itself,
-// and the new tab says it can be closed.
+// and the new tab says it can be closed. If the link is opened on ANOTHER device or browser, that
+// device asks to approve (with a matching 4-digit code) and the waiting page signs in by itself.
 const PENDING = 'signin-pending'
 const get = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
 const set = (k: string, v: string | null) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v) } catch { /* private mode */ } }
@@ -23,6 +25,14 @@ export default function Account() {
   const [display, setDisplay] = useState(name)
   const [savedName, setSavedName] = useState(false)
   const [linkTab, setLinkTab] = useState(false)
+  const [myCode, setMyCode] = useState('')
+  const [approve, setApprove] = useState<null | { pub: JsonWebKey; device: string; at: number; code: string }>(null)
+  const [handed, setHanded] = useState(false)
+  // opened from the email link in a browser that didn't ask: is another screen waiting for approval?
+  useEffect(() => {
+    if (!session || !arrivedByLink || get(PENDING)) return
+    void relayPost({ action: 'peek' }, session.access_token).then(async r => { if (r.waiting && r.pub) setApprove({ pub: r.pub, device: r.device, at: r.at, code: await codeOf(r.pub) }) })
+  }, [session])
   useEffect(() => setDisplay(name), [name])
 
   // when the session appears: the tab that asked carries on where it was; the email-link tab says so
@@ -33,11 +43,41 @@ export default function Account() {
     let p: { from?: string; at?: number; tab?: string } = {}
     try { p = JSON.parse(raw) } catch { /* */ }
     if (Date.now() - (p.at || 0) > 60 * 60_000) { set(PENDING, null); return }
-    if (sent && p.tab === TAB) { set(PENDING, null); nav(p.from || '/', { replace: true }) }        // the asking tab
-    else if (!sent) { setLinkTab(true); setTimeout(() => { try { window.close() } catch { /* */ } }, 1500) }   // the link tab
-  }, [session, sent, nav])
+    if (p.tab === TAB) { set(PENDING, null); nav(p.from || '/', { replace: true }) }        // the asking tab (also after a reload)
+    else { setLinkTab(true); setTimeout(() => { try { window.close() } catch { /* */ } }, 1500) }   // the link tab
+  }, [session, nav])
 
   if (!supabase) return <main className="page"><div className="card empty">Accounts aren't configured on this deployment.</div></main>
+
+  if (handed) return (
+    <main className="page">
+      <div className="card" style={{ maxWidth: 420, margin: '24px auto', textAlign: 'center' }}>
+        <h1>Approved</h1>
+        <p>Your other screen is signing in now. You can close this page.</p>
+      </div>
+    </main>
+  )
+  if (session && approve) return (
+    <main className="page">
+      <div className="card" style={{ maxWidth: 420, margin: '24px auto', textAlign: 'center' }}>
+        <h1>Approve this sign-in?</h1>
+        <p>{approve.device} asked to sign in as <b>{session.user.email}</b> {Math.max(1, Math.round((Date.now() - approve.at) / 60_000))} min ago.</p>
+        <p className="muted small">Check that screen shows this code:</p>
+        <div className="mono" style={{ fontSize: 34, fontWeight: 700, letterSpacing: 8, margin: '8px 0 16px' }}>{approve.code}</div>
+        {err && <div className="notice err">{err}</div>}
+        <button className="btn btn-primary btn-block" disabled={busy} onClick={async () => {
+          setBusy(true); setErr(null)
+          try {
+            const box = await sealFor(approve.pub, session.refresh_token)
+            const r = await relayPost({ action: 'approve', box }, session.access_token)
+            if (!r.ok) throw new Error(r.error || 'approval failed')
+            await handOff(); setApprove(null); setHanded(true)
+          } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+        }}>{busy ? 'Approving…' : 'Yes, the code matches: sign that screen in'}</button>
+        <button className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={async () => { await relayPost({ action: 'decline' }, session.access_token); setApprove(null) }}>Not me / sign in on this device instead</button>
+      </div>
+    </main>
+  )
 
   if (session && linkTab) return (
     <main className="page">
@@ -58,6 +98,7 @@ export default function Account() {
         {sent ? (
           <>
             <div className="notice ok">Sent to <b>{email}</b>. It can take a minute; check spam too.</div>
+            {myCode && <p className="small">Opening the email on <b>another phone or computer</b>? Tap the link there and approve: this page signs in by itself. It will show the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>; only approve if it matches.</p>}
             <form onSubmit={async e => {
               e.preventDefault(); setBusy(true); setErr(null)
               const { error } = await supabase!.auth.verifyOtp({ email, token: code.trim(), type: 'email' })
@@ -75,6 +116,11 @@ export default function Account() {
           <form onSubmit={async e => {
             e.preventDefault(); setBusy(true); setErr(null)
             set(PENDING, JSON.stringify({ from: loc.state?.from || (document.referrer && new URL(document.referrer).origin === location.origin ? new URL(document.referrer).pathname + new URL(document.referrer).search : '/'), at: Date.now(), tab: TAB }))
+            try {
+              const w = await startWaiting(email)
+              const cur = JSON.parse(get(PENDING) || '{}')
+              set(PENDING, JSON.stringify({ ...cur, relay: { id: w.id, priv: w.priv } })); setMyCode(w.code)
+            } catch { /* approving elsewhere won't work, the code and same-browser link still do */ }
             const { error } = await supabase!.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + '/account' } })
             setBusy(false)
             if (error) { setErr(error.message); set(PENDING, null) } else setSent(true)

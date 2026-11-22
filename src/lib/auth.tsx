@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
 import { lockSettings } from './applock'
+import { openBox, post as relayPost } from './relay'
 
 interface AuthState { session: Session | null; name: string; ready: boolean; refreshName: () => void }
 const Ctx = createContext<AuthState>({ session: null, name: '', ready: true, refreshName: () => {} })
@@ -33,6 +34,13 @@ async function restore(): Promise<Session | null> {
   const { data, error } = await supabase.auth.refreshSession({ refresh_token: j.refresh_token })
   if (error) { if (!/fetch|network|timeout/i.test(error.message)) void backup('clear'); return null }
   return data.session
+}
+/** Hand this sign-in to another screen (approve from anywhere): forget it here without ending it. */
+export async function handOff() {
+  signingOut = true
+  await backup('clear')
+  await supabase?.auth.signOut({ scope: 'local' })
+  signingOut = false
 }
 /** Sign out everywhere on this browser: the backup goes first, so no tab can bring the session back. */
 export async function signOut() {
@@ -67,10 +75,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // that tab saves it (storage event), or when this tab is looked at again
     const recheck = () => { supabase!.auth.getSession().then(({ data }) => { setSession(cur => (cur?.access_token === data.session?.access_token ? cur : (loadName(data.session), data.session))) }) }
     const onStorage = (e: StorageEvent) => { if (!e.key || e.key.startsWith('sb-')) recheck() }
+    // approve from anywhere: while this browser waits for a sign-in that was asked for here, check
+    // every few seconds whether it was approved on another device (api/login-relay.js)
+    const poll = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return
+      let p: { relay?: { id: string; priv: JsonWebKey }; at?: number } = {}
+      try { p = JSON.parse(localStorage.getItem('signin-pending') || '{}') } catch { /* */ }
+      if (!p.relay || Date.now() - (p.at || 0) > 15 * 60_000) return
+      const { data } = await supabase!.auth.getSession()
+      if (data.session) return
+      const r = await relayPost({ action: 'claim', id: p.relay.id })
+      if (!r.box) return
+      try {
+        const rt = await openBox(p.relay.priv, r.box)
+        const { data: d, error } = await supabase!.auth.refreshSession({ refresh_token: rt })
+        if (!error && d.session) { void relayPost({ action: 'claim', id: p.relay.id, done: true }); setSession(d.session); loadName(d.session); keep(d.session) }
+      } catch { /* not ours or expired */ }
+    }, 3000)
     window.addEventListener('storage', onStorage)
     window.addEventListener('focus', recheck)
     document.addEventListener('visibilitychange', recheck)
-    return () => { sub.subscription.unsubscribe(); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', recheck); document.removeEventListener('visibilitychange', recheck) }
+    return () => { clearInterval(poll); sub.subscription.unsubscribe(); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', recheck); document.removeEventListener('visibilitychange', recheck) }
   }, [])
 
   return <Ctx.Provider value={{ session, name, ready, refreshName: () => loadName(session) }}>{children}</Ctx.Provider>
