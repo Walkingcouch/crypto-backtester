@@ -10,6 +10,8 @@ import { AppLockSettings } from '../components/AppLock'
 // and the new tab says it can be closed. If the link is opened on ANOTHER device or browser, that
 // device asks to approve (with a matching 4-digit code) and the waiting page signs in by itself.
 const PENDING = 'signin-pending'
+// opened from an iPhone/iPad Home Screen icon: its own storage, separate from Safari's
+const STANDALONE = typeof window !== 'undefined' && ((navigator as unknown as { standalone?: boolean }).standalone === true || window.matchMedia?.('(display-mode: standalone)').matches)
 const get = (k: string) => { try { return localStorage.getItem(k) } catch { return null } }
 const set = (k: string, v: string | null) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v) } catch { /* private mode */ } }
 
@@ -98,14 +100,16 @@ export default function Account() {
         {sent ? (
           <>
             <div className="notice ok">Sent to <b>{email}</b>. It can take a minute; check spam too.</div>
-            {myCode && <p className="small">Opening the email on <b>another phone or computer</b>? Tap the link there and approve: this page signs in by itself. It will show the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>; only approve if it matches.</p>}
+            {myCode && (STANDALONE
+              ? <div className="notice info"><b>Using the Home Screen app?</b> Tap the link in the email. It opens in Safari, which asks you to approve this sign-in with the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>. Approve, then come back to this app: it signs in by itself within a few seconds.</div>
+              : <p className="small">No code in the email, or opening it on <b>another phone or computer</b>? Tap the link there and approve: this page signs in by itself. It will show the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>; only approve if it matches.</p>)}
             <form onSubmit={async e => {
               e.preventDefault(); setBusy(true); setErr(null)
               const { error } = await supabase!.auth.verifyOtp({ email, token: code.trim(), type: 'email' })
               setBusy(false)
               if (error) setErr(error.message.includes('expired') || error.message.includes('invalid') ? 'That code is wrong or has expired. Check the latest email, or send a new one.' : error.message)
             }}>
-              <label className="field"><span>Type the 6-digit code from the email</span>
+              <label className="field"><span>Type the 6-digit code from the email (if it has one)</span>
                 <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6,8}" maxLength={8} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} placeholder="123456" autoFocus /></label>
               <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? 'Checking…' : 'Sign in'}</button>
             </form>
