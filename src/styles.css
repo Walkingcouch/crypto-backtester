@@ -559,3 +559,5 @@ a.mp-solo { font-weight: 600; font-size: 16px; }
   .topbar-inner { gap: 10px; }
 }
 @media (max-width: 720px) { .subnav-inner { mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); padding-right: 28px; } }
+.spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); border-top-color: var(--accent); animation: spin 0.9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }

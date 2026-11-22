@@ -35,6 +35,27 @@ async function restore(): Promise<Session | null> {
   if (error) { if (!/fetch|network|timeout/i.test(error.message)) void backup('clear'); return null }
   return data.session
 }
+/** Was the sign-in this browser is waiting for approved on another device? Signs in here if so. */
+let checking = false
+export async function checkApproval(): Promise<Session | null> {
+  if (!supabase || checking) return null
+  let p: { relay?: { id: string; priv: JsonWebKey }; at?: number } = {}
+  try { p = JSON.parse(localStorage.getItem('signin-pending') || '{}') } catch { /* */ }
+  if (!p.relay || Date.now() - (p.at || 0) > 15 * 60_000) return null
+  checking = true
+  try {
+    const { data } = await supabase.auth.getSession()
+    if (data.session) return null
+    const r = await relayPost({ action: 'claim', id: p.relay.id })
+    if (!r.box) return null
+    const rt = await openBox(p.relay.priv, r.box)
+    const { data: d, error } = await supabase.auth.refreshSession({ refresh_token: rt })
+    if (error || !d.session) return null
+    void relayPost({ action: 'claim', id: p.relay.id, done: true })
+    keep(d.session)
+    return d.session
+  } catch { return null } finally { checking = false }
+}
 /** Hand this sign-in to another screen (approve from anywhere): forget it here without ending it. */
 export async function handOff() {
   signingOut = true
@@ -76,26 +97,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const recheck = () => { supabase!.auth.getSession().then(({ data }) => { setSession(cur => (cur?.access_token === data.session?.access_token ? cur : (loadName(data.session), data.session))) }) }
     const onStorage = (e: StorageEvent) => { if (!e.key || e.key.startsWith('sb-')) recheck() }
     // approve from anywhere: while this browser waits for a sign-in that was asked for here, check
-    // every few seconds whether it was approved on another device (api/login-relay.js)
-    const poll = setInterval(async () => {
-      if (document.visibilityState !== 'visible') return
-      let p: { relay?: { id: string; priv: JsonWebKey }; at?: number } = {}
-      try { p = JSON.parse(localStorage.getItem('signin-pending') || '{}') } catch { /* */ }
-      if (!p.relay || Date.now() - (p.at || 0) > 15 * 60_000) return
-      const { data } = await supabase!.auth.getSession()
-      if (data.session) return
-      const r = await relayPost({ action: 'claim', id: p.relay.id })
-      if (!r.box) return
-      try {
-        const rt = await openBox(p.relay.priv, r.box)
-        const { data: d, error } = await supabase!.auth.refreshSession({ refresh_token: rt })
-        if (!error && d.session) { void relayPost({ action: 'claim', id: p.relay.id, done: true }); setSession(d.session); loadName(d.session); keep(d.session) }
-      } catch { /* not ours or expired */ }
-    }, 3000)
+    // every few seconds, and straight away when the page is looked at again (api/login-relay.js)
+    const check = async () => { const r = await checkApproval(); if (r) { setSession(r); loadName(r) } }
+    const poll = setInterval(() => { if (document.visibilityState === 'visible') void check() }, 3000)
+    const onBack = () => { if (document.visibilityState === 'visible') void check() }
+    document.addEventListener('visibilitychange', onBack); window.addEventListener('focus', onBack); window.addEventListener('pageshow', onBack)
+    window.addEventListener('signin:check', check)
     window.addEventListener('storage', onStorage)
     window.addEventListener('focus', recheck)
     document.addEventListener('visibilitychange', recheck)
-    return () => { clearInterval(poll); sub.subscription.unsubscribe(); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', recheck); document.removeEventListener('visibilitychange', recheck) }
+    return () => { clearInterval(poll); document.removeEventListener('visibilitychange', onBack); window.removeEventListener('focus', onBack); window.removeEventListener('pageshow', onBack); window.removeEventListener('signin:check', check); sub.subscription.unsubscribe(); window.removeEventListener('storage', onStorage); window.removeEventListener('focus', recheck); document.removeEventListener('visibilitychange', recheck) }
   }, [])
 
   return <Ctx.Provider value={{ session, name, ready, refreshName: () => loadName(session) }}>{children}</Ctx.Provider>

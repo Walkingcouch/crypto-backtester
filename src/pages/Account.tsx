@@ -30,24 +30,33 @@ export default function Account() {
   const [myCode, setMyCode] = useState('')
   const [approve, setApprove] = useState<null | { pub: JsonWebKey; device: string; at: number; code: string }>(null)
   const [handed, setHanded] = useState(false)
-  // opened from the email link in a browser that didn't ask: is another screen waiting for approval?
+  // the link opened here: if ANOTHER screen is waiting (its request isn't this browser's own), ask to
+  // approve it; otherwise this is the same browser and the asking tab picks the sign-in up itself
+  const [linkChecked, setLinkChecked] = useState(!arrivedByLink)
   useEffect(() => {
-    if (!session || !arrivedByLink || get(PENDING)) return
-    void relayPost({ action: 'peek' }, session.access_token).then(async r => { if (r.waiting && r.pub) setApprove({ pub: r.pub, device: r.device, at: r.at, code: await codeOf(r.pub) }) })
-  }, [session])
+    if (!session || !arrivedByLink || linkChecked) return
+    void relayPost({ action: 'peek' }, session.access_token).then(async r => {
+      let mine: { relay?: { priv: JsonWebKey }; at?: number } = {}
+      try { mine = JSON.parse(get(PENDING) || '{}') } catch { /* */ }
+      const own = mine.relay?.priv?.n && r.pub?.n === mine.relay.priv.n && Date.now() - (mine.at || 0) < 15 * 60_000
+      if (r.waiting && r.pub && !own) setApprove({ pub: r.pub, device: r.device, at: r.at, code: await codeOf(r.pub) })
+      setLinkChecked(true)
+    }).catch(() => setLinkChecked(true))
+  }, [session, linkChecked])
   useEffect(() => setDisplay(name), [name])
 
   // when the session appears: the tab that asked carries on where it was; the email-link tab says so
   useEffect(() => {
-    if (!session) return
+    if (!session || !linkChecked || approve) return
     const raw = get(PENDING)
     if (!raw) return
     let p: { from?: string; at?: number; tab?: string } = {}
     try { p = JSON.parse(raw) } catch { /* */ }
     if (Date.now() - (p.at || 0) > 60 * 60_000) { set(PENDING, null); return }
+    if (p.tab !== TAB && !arrivedByLink) return                                         // an old request from another tab
     if (p.tab === TAB) { set(PENDING, null); nav(p.from || '/', { replace: true }) }        // the asking tab (also after a reload)
     else { setLinkTab(true); setTimeout(() => { try { window.close() } catch { /* */ } }, 1500) }   // the link tab
-  }, [session, nav])
+  }, [session, nav, linkChecked, approve])
 
   if (!supabase) return <main className="page"><div className="card empty">Accounts aren't configured on this deployment.</div></main>
 
@@ -100,6 +109,7 @@ export default function Account() {
         {sent ? (
           <>
             <div className="notice ok">Sent to <b>{email}</b>. It can take a minute; check spam too.</div>
+            {myCode && <div className="flex small" style={{ gap: 8, alignItems: 'center', margin: '8px 0' }}><span className="spinner" aria-hidden="true" /> Waiting for you to approve… <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.dispatchEvent(new Event('signin:check'))}>Check now</button></div>}
             {myCode && (STANDALONE
               ? <div className="notice info"><b>Using the Home Screen app?</b> Tap the link in the email. It opens in Safari, which asks you to approve this sign-in with the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>. Approve, then come back to this app: it signs in by itself within a few seconds.</div>
               : <p className="small">No code in the email, or opening it on <b>another phone or computer</b>? Tap the link there and approve: this page signs in by itself. It will show the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>; only approve if it matches.</p>)}
