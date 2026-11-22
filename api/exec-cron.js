@@ -6,6 +6,7 @@ import { livePrice } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { runExecution } from './_lib/exec/engine.js'
 import { envFor, LEGACY, ownersFrom, settingsFor } from './_lib/exec/owners.js'
+import { envWithConnections } from './_lib/exec/creds.js'
 import { alertHook, labState, loadAll, store } from './_lib/exec/store.js'
 
 export default async function handler(req, res) {
@@ -22,7 +23,7 @@ export default async function handler(req, res) {
     const out = {}
     for (const owner of owners) {
       try {
-        const env = envFor(process.env, owner)
+        const env = await envWithConnections(owner)
         const settings = settingsFor(all.settings, owner)
         const A = adapters(env, settings)
         if (A.mode === 'live' && (!env.COINSPOT_API_KEY || !env.COINSPOT_API_SECRET)) throw new Error(`live mode needs ${owner === LEGACY ? 'COINSPOT_API_KEY / COINSPOT_API_SECRET' : `COINSPOT_API_KEY_${owner.toUpperCase()} / COINSPOT_API_SECRET_${owner.toUpperCase()}`}`)

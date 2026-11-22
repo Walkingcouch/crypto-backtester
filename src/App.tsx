@@ -8,6 +8,7 @@ import Predict from './pages/Predict'
 import Picks from './pages/Picks'
 import { LabDay, LabExplore, LabSwing, SharesDay, SharesExplore, SharesSwing } from './pages/Lab'
 import Account from './pages/Account'
+import Connections from './pages/Connections'
 import EconCalendar from './pages/EconCalendar'
 import { useAuth } from './lib/auth'
 import { cloudEnabled } from './lib/supabase'
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/runs" element={<Navigate to="/history" replace />} />
         <Route path="/ledger" element={<Navigate to="/history?tab=checks" replace />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/connections" element={<Connections />} />
         <Route path="*" element={<div className="page empty">Page not found. <Link to="/markets">Back to Markets</Link></div>} />
       </Routes>
       <footer className="footer">

@@ -53,6 +53,12 @@
     },
     "api/pit-cron.js": {
       "maxDuration": 300
+    },
+    "api/connections.js": {
+      "maxDuration": 30,
+      "regions": [
+        "syd1"
+      ]
     }
   },
   "headers": [

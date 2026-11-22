@@ -528,3 +528,8 @@ pre { overflow-x: auto; max-width: 100%; }
 /* phones: fade the right edge of the sideways-scrolling tab row so it's clear there's more */
 @media (max-width: 720px) { .nav { mask-image: linear-gradient(to right, #000 85%, transparent); -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); padding-right: 24px; } }
 .lock-icon { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto; background: var(--accent-soft); color: var(--accent); }
+.conn-list { display: grid; gap: 10px; }
+.conn { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.conn-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 2px; }
+.conn .mono { overflow-wrap: anywhere; }
+textarea { width: 100%; font: inherit; border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; background: var(--surface); color: var(--text); }

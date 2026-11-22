@@ -1,7 +1,7 @@
 // Admin controls for the Automation panel: status, kill switch, guardrail settings, and confirming
 // or dismissing Superhero share orders. Requires a signed-in site account whose email is listed in
 // the ADMIN_EMAILS environment variable (comma-separated). If ADMIN_EMAILS isn't set, everything is
-// refused. Live mode can only be switched on in Vercel (EXECUTION_MODE, or EXECUTION_MODE_<NAME>).
+// refused. Keys and paper/live are set on the Connections page (api/connections.js), or in Vercel.
 // One automation account per person (owners.js): everyone can SEE every account, but every action
 // only touches the signed-in person's own account, keys and orders.
 import { SUPABASE_KEY, SUPABASE_URL } from './_lib/forecaster.js'
@@ -11,6 +11,7 @@ import { validateOrder } from './_lib/exec/risk.js'
 import { alertHook, labState, loadAll, setSettingsFor, store } from './_lib/exec/store.js'
 import { alertsReady, notify } from './_lib/exec/notify.js'
 import { envFor, keyPrefix, LEGACY, ownerOf, ownersFrom, settingsFor } from './_lib/exec/owners.js'
+import { envWithConnections } from './_lib/exec/creds.js'
 
 const LIMITS = {       // sanity bounds so a typo can't set a $25,000 order
   max_order_aud: [1, 1000], max_daily_spend_aud: [1, 5000], min_wallet_buffer_aud: [0, 100000],
@@ -83,7 +84,7 @@ export default async function handler(req, res) {
     const names = [...new Set([me, LEGACY, ...ownersFrom(process.env).map(o => o.owner), ...all.settings.map(x => x.owner || LEGACY)])]
       .filter(o => all.perUser || o === LEGACY)
     const accounts = await Promise.all(names.map(async owner => {
-      const env = envFor(process.env, owner), settings = settingsFor(all.settings, owner)
+      const env = await envWithConnections(owner), settings = settingsFor(all.settings, owner)
       const orders = all.orders.filter(o => (o.owner || LEGACY) === owner)
       const A = adapters(env, settings)
       const keys = !!(env.COINSPOT_API_KEY && env.COINSPOT_API_SECRET)
@@ -95,7 +96,7 @@ export default async function handler(req, res) {
       return {
         owner, mine: owner === me, mode: A.mode, keysSet: keys, settings, wallet, walletError,
         spent24h: +spent.toFixed(2), remaining24h: +Math.max(0, settings.max_daily_spend_aud - spent).toFixed(2),
-        orders, webhook: !!env.SHARE_ORDER_WEBHOOK_URL, alerts: alertsReady(process.env, owner),
+        orders, webhook: !!env.SHARE_ORDER_WEBHOOK_URL, alerts: alertsReady(process.env, owner), keysFrom: env.KEYS_FROM || null, modeFrom: env.MODE_FROM, keysError: env.KEYS_ERROR || null,
         envNames: owner === LEGACY ? 'EXECUTION_MODE, COINSPOT_API_KEY, COINSPOT_API_SECRET' : ['EXECUTION_MODE', 'COINSPOT_API_KEY', 'COINSPOT_API_SECRET'].map(n => `${n}_${owner.toUpperCase()}`).join(', '),
       }
     }))
@@ -111,7 +112,7 @@ export default async function handler(req, res) {
 // written to the same audit log, marked as a manual test.
 async function testRoundTrip(owner, S, orders, who) {
   const coin = 'BTC'
-  const env = envFor(process.env, owner)
+  const env = await envWithConnections(owner)
   const A = adapters(env, S)
   const mode = A.mode, crypto = A.crypto, st = store(orders, { alert: await alertHook(owner, orders) }), now = Date.now()
   const key = `${keyPrefix(owner)}test:manual:${coin}:${now}`
@@ -159,7 +160,7 @@ async function testRoundTrip(owner, S, orders, who) {
 // The row keeps the lab's key, so the normal job sells exactly this amount when the lab closes it.
 async function buyAnyway(owner, S, orders, who, key) {
   const o = orders.find(x => x.idem_key === key)
-  const env = envFor(process.env, owner)
+  const env = await envWithConnections(owner)
   const A = adapters(env, S)
   if (!o || o.venue !== 'coinspot' || o.side !== 'BUY' || o.status !== 'rejected') return { ok: false, error: 'only a blocked crypto buy can be overridden' }
   if (o.mode !== A.mode) return { ok: false, error: `that signal was handled in ${o.mode} mode; the bot is now in ${A.mode} mode` }

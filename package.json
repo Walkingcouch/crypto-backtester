@@ -8,16 +8,19 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test tests/exec.test.mjs tests/regime.test.mjs tests/checks.test.mjs tests/pit.test.mjs tests/scorecard.test.mjs tests/applock.test.mjs"
+    "test": "node --test tests/exec.test.mjs tests/regime.test.mjs tests/checks.test.mjs tests/pit.test.mjs tests/scorecard.test.mjs tests/applock.test.mjs tests/connections.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
+    "bs58": "^6.0.0",
     "fflate": "^0.8.3",
     "lightweight-charts": "^5.2.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
-    "unpdf": "^1.9.1"
+    "tweetnacl": "^1.0.3",
+    "unpdf": "^1.9.1",
+    "viem": "^2.58.4"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

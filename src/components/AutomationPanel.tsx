@@ -107,7 +107,7 @@ export default function AutomationPanel() {
         >{S.kill_switch ? 'Kill switch is ON: tap to resume trading' : 'KILL SWITCH: stop all orders now'}</button>}
         <div className="kpis">
           <div className="kpi"><div className="label">CoinSpot AUD {st.mode === 'paper' ? '(simulated)' : 'available'}</div><div className="value">{st.wallet ? aud(st.wallet.aud) : '–'}</div>
-            <div className="sub">{st.walletError ? <span className="neg">{st.walletError}</span> : st.mode === 'live' && !st.keysSet ? `API keys not set (${st.envNames})` : `reserve ${aud(S.min_wallet_buffer_aud)} never used`}</div></div>
+            <div className="sub">{st.walletError ? <span className="neg">{st.walletError}</span> : st.mode === 'live' && !st.keysSet ? 'CoinSpot not connected (Connections page)' : `reserve ${aud(S.min_wallet_buffer_aud)} never used`}</div></div>
           <div className="kpi"><div className="label">Spent in the last 24 h</div><div className="value">{aud(st.spent24h)}</div>
             <div className="sub">{aud(st.remaining24h)} left of {aud(S.max_daily_spend_aud)}</div>
             <div style={{ height: 6, background: 'var(--surface-2)', borderRadius: 3, marginTop: 6 }}><div style={{ width: `${spentPct}%`, height: 6, borderRadius: 3, background: spentPct >= 100 ? 'var(--neg)' : 'var(--accent)' }} /></div></div>
@@ -117,7 +117,7 @@ export default function AutomationPanel() {
           Mirrors <b>{S.crypto_source_lab}</b> lab account <b>{S.crypto_source_account}</b>.{' '}
           {S.require_proven ? 'In live mode only rules that passed every professional check are mirrored.' : <span className="neg">Live mode will mirror unproven rules too.</span>}{' '}
           The bot never moves money in or out of CoinSpot: it can only buy and sell with what's already in the wallet.
-          {st.mode === 'paper' && ` Switching to live is done only in Vercel (${st.envNames.split(', ')[0]}=live, with ${st.envNames.split(', ').slice(1).join(' and ')} set), never from this page.`}
+          {can && <> Keys and paper/live: <Link to="/connections">Connections page</Link>.</>}
         </p>
         {can && <div className="small" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 12px' }}>
           {!test.armed

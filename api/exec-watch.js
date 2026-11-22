@@ -8,6 +8,7 @@ import { livePrice } from './_lib/forecaster.js'
 import { adapters } from './_lib/exec/adapter.js'
 import { notify } from './_lib/exec/notify.js'
 import { envFor, LEGACY } from './_lib/exec/owners.js'
+import { envWithConnections } from './_lib/exec/creds.js'
 import { validateOrder } from './_lib/exec/risk.js'
 import { openPositions, store } from './_lib/exec/store.js'
 
@@ -33,7 +34,7 @@ export default async function handler(req, res) {
       // the normal 5-minute job or an earlier minute may already be selling it
       if (b.sell_status === 'intent' && Date.now() - Date.parse(b.sell_updated) < 3 * 60_000) { actions.push(`${tag}: sell already in progress`); continue }
       if (kill[owner]) { actions.push(`${tag}: at its stop, but the kill switch is on`); continue }
-      const env = envFor(process.env, owner)
+      const env = await envWithConnections(owner)
       const A = adapters(env, {})
       if (A.mode !== 'live' || !env.COINSPOT_API_KEY) { actions.push(`${tag}: at its stop, but ${owner}'s account isn't in live mode with keys; sell it in CoinSpot`); continue }
       const st = store([], { alert: async row => { if (row.status === 'filled' || row.status === 'failed') await notify(owner, row.status === 'filled'
