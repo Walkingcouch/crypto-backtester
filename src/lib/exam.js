@@ -60,3 +60,37 @@ export function lastExam(state, id, now = Date.now()) {
   const seal = currentSeal(now), e = state?.exams || {}
   return e[`${seal.id}|${id}`] ? { ...e[`${seal.id}|${id}`], half: seal.id } : e[`${seal.prev.id}|${id}`] ? { ...e[`${seal.prev.id}|${id}`], half: seal.prev.id, carried: true } : (e[id] ? { ...e[id], half: '2026H2' } : null)
 }
+
+// ---------------------------------------------------------------- point in time
+// Every decision (choosing, checking, ranking, gating) must come out the same whether it is made
+// with data that ends at that moment or with later data cut back to it. knownAt() is that cut: it
+// keeps only bars that STARTED before `now` (production data holds only finished bars, so live runs
+// are unchanged; historical decisions are made at bar boundaries) and drops every cached feature
+// so nothing computed from later bars survives.
+const CACHES = ['F', 'DF', 'X', 'SF', 'tIdx', '_regime', 'dIdx']
+export function knownAt(data, now) {
+  if (!Number.isFinite(now) || !data?.coins) return data
+  const late = c => c.t?.length && c.t[c.t.length - 1] >= now
+  const anyLate = data.coins.some(late) || Object.values(data.bench || {}).some(b => b && late(b))
+  if (!anyLate) return data
+  const cache = new Map()
+  const cut = c => {
+    if (!c || !late(c)) return c
+    if (cache.has(c)) return cache.get(c)
+    let n = 0; while (n < c.t.length && c.t[n] < now) n++
+    const out = {}
+    for (const [k, v] of Object.entries(c)) {
+      if (CACHES.includes(k)) continue
+      out[k] = (Array.isArray(v) || ArrayBuffer.isView(v)) && v.length === c.t.length ? v.slice(0, n) : v
+    }
+    cache.set(c, out)
+    return out
+  }
+  const coins = data.coins.map(cut).filter(c => c.t.length > 0)
+  const out = { ...data, coins }
+  delete out.leaderCtx; delete out.xs           // caches built from the uncut data
+  if (data.bench) out.bench = Object.fromEntries(Object.entries(data.bench).map(([k, b]) => [k, cut(b)]))
+  return out
+}
+/** What a rule's past signals said at time `now`: only trades that had already closed. */
+export const closedBy = (ev, now) => Number.isFinite(now) ? ev.filter(e => e.exitT <= now) : ev

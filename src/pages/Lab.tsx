@@ -15,6 +15,7 @@ const pct = (x: number, d = 1) => (Number.isFinite(x) ? `${x >= 0 ? '+' : ''}${(
 const pct0 = (x: number) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '–')
 const when = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 const day = (t: number) => new Date(t).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+const DAY = 86_400_000
 const cls = (x: number) => (x > 0 ? 'pos' : x < 0 ? 'neg' : '')
 const KIND: Record<string, string> = { promote: 'Promoted', rollback: 'Rolled back', challenger: 'New challenger', retire: 'Retired', trade: 'Trade', note: 'Note' }
 const COLORS: Record<string, string> = { john: 'var(--accent)', mark: '#3b6fd8', binance: '#d99a1e', ibus: '#3b6fd8', ibasx: '#d99a1e' }
@@ -360,6 +361,7 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
             </Disclosure>}
           </section>
 
+          {!shares && <ScorecardCard state={state} />}
           {v.kind === 'explore' && <ExploreCard state={state} />}
           {v.kind === 'day' && <WalkCard state={state} costs={shares ? "Interactive Brokers' US costs" : 'Binance-level costs'} />}
 
@@ -480,6 +482,50 @@ function RuleCard({ r, title, small }: { r: LabRule; title: string; small?: bool
       </div>
       {r.rigor && <RigorBox g={r.rigor} now={now} />}
     </div>
+  )
+}
+
+interface ScGroup { n: number; r: number; net: number }
+interface ScSnap { at: number; lab: string; cost: number; horizonDays: number; eligible: number; final?: boolean; rules: { id: string; rank: number; score: number; group: 'top' | 'near' | 'random'; text?: string }[]; result?: { groups: Record<'top' | 'near' | 'random', ScGroup & { sumR: number }>; ic: number | null; icRules: number } }
+interface Scorecard { snaps: ScSnap[]; summary?: { snapshots: number; scored: number; final: number; first: number | null; groups: Record<'top' | 'near' | 'random', ScGroup>; ic: number | null; icWeeks: number; topBeatsRandom: { wins: number; of: number } | null } }
+interface Bench { since: number; value: number; maxDD: number; acct?: number; acctStart: number; acctMaxDD: number; exposure: number }
+
+/** The engine's own scorecard (scorecard.js): does its ranking predict what happens next, and does running the account beat BTC-and-cash? */
+function ScorecardCard({ state }: { state: LabState }) {
+  const st = state as LabState & { scorecard?: Scorecard; benchmark?: Bench }
+  const sc = st.scorecard, b = st.benchmark, sum = sc?.summary
+  if (!sc?.snaps?.length && !b) return null
+  const last = sc?.snaps?.[sc.snaps.length - 1]
+  const firstDue = sc?.snaps?.[0] ? sc.snaps[0].at + (sc.snaps[0].horizonDays + (sc.snaps[0].horizonDays > 7 ? 20 : 1)) * DAY : null
+  const rows: ['top' | 'near' | 'random', string][] = [['top', 'Top 5 (what it would pick)'], ['near', 'Near misses (ranks 6–20, 5 drawn)'], ['random', 'Random 5 of the rest']]
+  return (
+    <section className="card">
+      <h2>Engine scorecard <Info>Testing thousands of rules only helps if the engine's ranking means something. Each week the lab saves its ranking before anyone knows the outcome, then follows three groups forward over the same weeks at the same exchange cost. Every result is also counted in R (the result divided by the trade's stop distance) so each trade risks the same. If higher-ranked groups don't do better afterwards, the ranking isn't adding anything yet.</Info></h2>
+      {sc?.snaps?.length ? <>
+        <p className="muted small" style={{ marginTop: 0 }}>{sc.snaps.length} weekly ranking{sc.snaps.length === 1 ? '' : 's'} saved since {day(sc.snaps[0].at)}, each followed for {sc.snaps[0].horizonDays} days at {pct(sc.snaps[0].cost)} a round trip.{last ? ` Latest: ${last.eligible} rules ranked.` : ''}</p>
+        {sum && sum.scored > 0 ? <>
+          <div className="table-wrap"><table className="record stack-sm">
+            <thead><tr><th>Group</th><th>Trades since</th><th>Average after costs</th><th>Average in R</th></tr></thead>
+            <tbody>{rows.map(([k, label]) => (
+              <tr key={k}><td>{label}</td><td>{sum.groups[k].n}</td><td className={cls(sum.groups[k].net)}>{sum.groups[k].n ? pct(sum.groups[k].net, 2) : '–'}</td><td className={cls(sum.groups[k].r)}>{sum.groups[k].n ? `${sum.groups[k].r >= 0 ? '+' : ''}${sum.groups[k].r.toFixed(2)}R` : '–'}</td></tr>
+            ))}</tbody></table></div>
+          <p className="small">Rank vs later result: <b>{sum.ic == null ? 'not enough yet' : `${sum.ic >= 0 ? '+' : ''}${sum.ic.toFixed(2)}`}</b>{sum.ic != null && <span className="muted"> (average over {sum.icWeeks} week{sum.icWeeks === 1 ? '' : 's'}; +1 = perfect ranking, 0 = no link)</span>}
+            {sum.topBeatsRandom && <> · top beat random in <b>{sum.topBeatsRandom.wins} of {sum.topBeatsRandom.of}</b> weeks</>}
+            <span className="muted"> · {sum.final} week{sum.final === 1 ? '' : 's'} complete, {sum.scored - sum.final} still running</span></p>
+        </> : <p className="small">No results yet: the first ranking's trades are still open. First full result around {firstDue ? day(firstDue) : 'soon'}; partial numbers appear as trades close.</p>}
+        {last && <Disclosure title={`This week's top 5 and the comparison groups (${day(last.at)})`}>
+          <ul className="lab-events">{last.rules.slice().sort((a, b) => a.rank - b.rank).map(r => <li key={r.id}><span className={`tag ${r.group === 'top' ? 'green' : ''}`}>{r.group === 'top' ? 'Top' : r.group === 'near' ? 'Near miss' : 'Random'}</span> #{r.rank} {r.text || r.id}</li>)}</ul>
+        </Disclosure>}
+      </> : <p className="muted small" style={{ marginTop: 0 }}>The first weekly ranking is saved at the next re-test.</p>}
+      {b && b.acct != null && <>
+        <h3 style={{ marginTop: 16 }}>The engine's account vs BTC-and-cash <Info>The Binance paper account follows every decision the engine makes: which rule trades, how much, when it switches and when it sits in cash. The benchmark holds Bitcoin in the same proportion the account has invested (the rest in cash), paying 0.15% on every change. If the account can't beat this, the engine's choices are giving its edge back.</Info></h3>
+        <div className="kpis" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+          <div className="kpi"><div className="label">Engine's account</div><div className={`value ${cls(b.acct / b.acctStart - 1)}`}>{pct(b.acct / b.acctStart - 1)}</div><div className="sub">worst fall {pct0(b.acctMaxDD)}</div></div>
+          <div className="kpi"><div className="label">BTC-and-cash, same exposure</div><div className={`value ${cls(b.value / b.acctStart - 1)}`}>{pct(b.value / b.acctStart - 1)}</div><div className="sub">worst fall {pct0(b.maxDD)}</div></div>
+        </div>
+        <p className="hint">Since {day(b.since)}, after fees. Invested now: {pct0(b.exposure)} of the account.</p>
+      </>}
+    </section>
   )
 }
 

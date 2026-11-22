@@ -17,7 +17,7 @@
 // Each with and without a daily-trend filter (previous close above its 20-day average).
 import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
-import { preSeal, sealedLast } from './exam.js'
+import { closedBy, currentSeal, knownAt, preSeal, sealedLast } from './exam.js'
 import { exploreCoach, failFast, recordLive } from './explore.js'
 import { coach, estimate, feeFrac, stats } from './lab.js'
 import { STOCK_ACCOUNTS } from './stocks.js'
@@ -190,24 +190,26 @@ export function sdEvents(r, data) {
 }
 
 /** Re-test all rules: chosen on older data, checked on the held-back last 60 days. */
-export function discoverStockDay(data, S = SDT, state) {
-  const last = sealedLast(data)              // choosing never sees the sealed exam window (exam.js)
+export function discoverStockDay(data0, S = SDT, state, now = Date.now()) {
+  const data = knownAt(data0, now)           // only what was known at `now` (same answer with later data cut back)
+  const seal = currentSeal(now)
+  const last = sealedLast(data, seal)        // choosing never sees the sealed exam window (exam.js)
   const cut = last - S.validDays * DAY
   const found = allStockDayRules().map(r => {
-    const evAll = sdEvents(r, data), ev = preSeal(evAll)
+    const evAll = closedBy(sdEvents(r, data), now), ev = preSeal(evAll, seal)
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     const valid = stats(ev.filter(e => e.t >= cut), S.refCost)
     const all = stats(evAll)
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
     return { ...r, spec: { kind: r.kind, n: r.n, g: r.g, K: r.K, k: r.k, last: r.last, H: r.H, tf: r.tf }, text: describeStockDay(r), train, valid, all, pass, ev, evAll }
   })
-  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 150, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null, state })
+  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 150, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now } : null, state })
 }
 
 /** Walk-forward: each month pick the best rule on the previous 120 days only, record the next 30. */
-export function walkForwardStockDay(found, data, S = SDT) {
+export function walkForwardStockDay(found, data, S = SDT, now = Date.now()) {
   const first = Math.min(...data.coins.map(c => c.t[150] ?? Infinity))
-  const last = sealedLast(data)   // stop at the sealed exam window
+  const last = sealedLast(data, currentSeal(now))   // stop at the sealed exam window
   const months = [], trades = []
   for (let start = first + S.wfTrainDays * DAY; start + S.wfTestDays * DAY <= last; start += S.wfTestDays * DAY) {
     const end = start + S.wfTestDays * DAY
@@ -301,8 +303,8 @@ export function stepStockDay(state, market, now, S = SDT) {
   const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 6)
   if (market.full && market.coins.length && (now - state.lastCoach >= S.coachEveryDays * DAY - 2 * HOUR || noChamp || unchecked)) {
     const data = { coins: market.coins }
-    const found = discoverStockDay(data, S, state)
-    state.walk = walkForwardStockDay(found, data, S)
+    const found = discoverStockDay(data, S, state, now)
+    state.walk = walkForwardStockDay(found, data, S, now)
     if (found.some(f => f.pass)) {
       for (const r of state.rules) if (r.practice && r.status !== 'retired') { r.status = 'retired'; r.reason = 'a rule passed the checks, so practice ended' }
       coach(state, found, now, S)

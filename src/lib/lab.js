@@ -15,8 +15,9 @@
 
 import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
-import { preSeal, sealedLast } from './exam.js'
+import { closedBy, currentSeal, knownAt, preSeal, sealedLast } from './exam.js'
 import { btcContext, comboSignal, describeCombo } from './blocks.js'
+import { rankFound, scoreSnapshots, stepBenchmark, takeSnapshot } from './scorecard.js'
 
 export const DAY = 86_400_000
 
@@ -271,7 +272,7 @@ export function events(r, data) {
         if (X?.k === 'be' && peak >= entry * (1 + sp)) stop = Math.max(stop, entry)
       }
       if (!Number.isFinite(exit)) break       // still open at the end of the data
-      const ev = { base: coin.base, m: coin.market || '', t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1 }
+      const ev = { base: coin.base, m: coin.market || '', t: coin.t[i], exitT: coin.t[j], g: exit / entry - 1, sp }
       // shares: what the market index did over exactly the same days (buy its open, sell its close)
       const B = data.bench?.[coin.market || '']
       if (B && B !== coin) {
@@ -297,8 +298,10 @@ export function stats(ev, cost = 0) {
 }
 
 /** Test every rule: chosen on the older data (train), checked on the last `validDays` (valid). */
-export function discover(data, S = LAB, state) {
-  const last = sealedLast(data)              // choosing never sees the sealed exam window (exam.js)
+export function discover(data0, S = LAB, state, now = Date.now()) {
+  const data = knownAt(data0, now)           // only what was known at `now` (same answer with later data cut back)
+  const seal = currentSeal(now)
+  const last = sealedLast(data, seal)        // choosing never sees the sealed exam window (exam.js)
   const cut = last - S.validDays * DAY
   if (S.benchmarks) {                       // shares: judge every rule against the market index
     data.bench = {}
@@ -306,8 +309,8 @@ export function discover(data, S = LAB, state) {
   }
   const rules = S.ruleSet ? S.ruleSet() : [...allRules(), ...(S.extraRules ? S.extraRules() : [])]
   const found0 = rules.map(r => {
-    const evAll = events(r, data), ev = preSeal(evAll)
-    const all = stats(evAll)                    // gross, used by the cost gate
+    const evAll = closedBy(events(r, data), now), ev = preSeal(evAll, seal)
+    const all = stats(evAll)                    // gross, used by the cost gate (trades closed by `now` only)
     // with a benchmark, the test is the return ABOVE the index over the same days, after costs
     // (each market pays its own round-trip cost when S.refCostBy is set)
     const judged = S.benchmarks ? ev.filter(e => Number.isFinite(e.ex)).map(e => ({ ...e, g: e.ex - (S.refCostBy?.[e.m] ?? S.refCost) })) : ev
@@ -320,7 +323,7 @@ export function discover(data, S = LAB, state) {
     return out
   })
   return assess(found0, data, {
-    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null, state,
+    cost: S.refCost, trials: countTrials(state, found0.map(f => f.id)), family: f => `${f.kind}:${f.mkt || ''}`, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now } : null, state,
     netOf: S.benchmarks ? (e => (Number.isFinite(e.ex) ? e.ex - (S.refCostBy?.[e.m] ?? S.refCost) : NaN)) : (e => e.g - S.refCost),
   })
 }
@@ -523,6 +526,24 @@ export function step(state, market, now, S = LAB, opts = {}) {
     state.found = found.map(f => ({ id: f.id, text: f.text, H: f.H ?? f.spec?.H, pass: f.pass, train: f.train, valid: f.valid, all: f.all, rigor: f.rigor, ...(f.vsIndex ? { vsIndex: f.vsIndex } : {}) }))
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
+    // the engine's scorecard: save this week's ranking before anyone knows how it turns out
+    if (!S.benchmarks) {
+      const SL = withLiveCost(state, market, S)
+      const ranked = opts.discover
+        ? rankFound((state.explore?.population || []).map(p => ({ ...p, pass: false })), { score: p => p.fitness })
+        : rankFound(found)
+      takeSnapshot(state, ranked, now, { lab: opts.discover ? 'explorer' : 'swing', cost: SL.refCost, horizonDays: 28, version: 1,
+        specOf: f => f.spec ?? { kind: f.kind, n: f.n, k: f.k, regime: f.regime, H: f.H, ...(f.mkt ? { mkt: f.mkt } : {}), ...(f.exit ? { exit: f.exit } : {}) } })
+    }
+  }
+  // follow the saved rankings forward, once a day
+  if (!S.benchmarks && state.scorecard?.snaps?.length && now - (state.scorecard.lastScored || 0) >= DAY - 6 * 3_600_000) {
+    const cache = new Map()
+    const eventsOf = spec => { const k = JSON.stringify(spec); if (!cache.has(k)) cache.set(k, events(spec, data)); return cache.get(k) }
+    const menu = opts.discover ? null : new Map(allRules().map(r => [r.id, r]))
+    const pop = opts.discover ? new Map((state.explore?.population || []).map(p => [p.id, p.spec])) : null
+    scoreSnapshots(state, eventsOf, now, { specById: id => menu?.get(id) || pop?.get(id) || null, maxHoldDays: 20 })
+    state.scorecard.lastScored = now
   }
 
   // 3. entries, once per new daily close. Markets with different closing times (US and ASX shares)
@@ -564,6 +585,13 @@ export function step(state, market, now, S = LAB, opts = {}) {
   const value = a => a.cashAud + rate * a.positions.reduce((s, pos) => s + pos.units * (price(pos.base) || pos.entryPx), 0)   // AUD
   push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 600)
   for (const a of Object.values(state.accounts)) { a.valueAud = value(a); a.valueUsd = value(a) / rate }
+  // the engine's own account (the exchange it is choosing for) against BTC-and-cash at the same exposure
+  const eng = state.accounts[S.liveAccount || LIVE_ACCOUNT]
+  if (!S.benchmarks && eng && price('BTC') > 0) {
+    const v = value(eng)
+    const b = stepBenchmark(state, { now, btc: price('BTC'), accountValue: v, exposure: v > 0 ? 1 - eng.cashAud / v : 0 })
+    if (b) state.history[state.history.length - 1].btcBench = +(b.value).toFixed(2)
+  }
   state.regimeNow = Object.fromEntries(['', 'US', 'ASX'].map(m => [m, regimeAt({ coins: market.coins, bench: market.bench }, m, now + 86_400_000)]).filter(([, v]) => v))
   state.audPerUsd = market.audPerUsd
   // latest prices of everything held, for the Positions table

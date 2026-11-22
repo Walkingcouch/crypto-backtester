@@ -2,6 +2,7 @@
 // state, takes a market snapshot (prices, candles, live exchange spreads), runs one step and
 // saves. Called by Supabase pg_cron with `Authorization: Bearer <CRON_SECRET>`. Without the
 // key (or with ?dry=1) it runs on a copy and saves nothing: the pages use that as a preview.
+import { decisionDigest } from '../../src/lib/scorecard.js'
 import { withLedger } from './trials.js'
 import { newState, summary } from '../../src/lib/lab.js'
 import { rpc, sb } from './forecaster.js'
@@ -158,7 +159,8 @@ export function labHandler(opts) {
       const held = new Set()
       for (const a of Object.values(saved?.accounts || {})) for (const p of a.positions) held.add(p.base)
       for (const s of saved?.shadow || []) held.add(s.base)
-      const nPages = typeof pages === 'function' ? pages(saved, Date.now()) : pages
+      const pitAt = q.get('pit') && opts.pitCheck ? Date.parse(q.get('pit') + 'T00:00:00Z') : NaN
+      const nPages = Number.isFinite(pitAt) && opts.pitPages ? opts.pitPages : typeof pages === 'function' ? pages(saved, Date.now()) : pages
       const csListed = await coinspotListed()
       // wide mode (Day trading): trade every coin CoinSpot sells that Binance also lists with real
       // volume. Rules are still chosen and checked on the deep-history top coins (5 years); the rest
@@ -218,6 +220,19 @@ export function labHandler(opts) {
         market.quotes.john[c.base] = COINSPOT_EST_SPREAD; market.estimated.john[c.base] = true
       }
       if (opts.events) market.events = await weekCalendar().catch(() => [])
+      // ?pit=2026-08-01: the point-in-time check on real data. The re-test is run twice as of that
+      // date: once on data cut by hand to bars before it, once on the full data (the engine must cut it
+      // itself). Every decision must match. Read-only: nothing is saved.
+      if (Number.isFinite(pitAt)) {
+        const data = { coins: [...(market.deep || market.coins), ...market.history], member: market.member }
+        const handCut = { ...data, coins: data.coins.map(c => { let n = 0; while (n < c.t.length && c.t[n] < pitAt) n++; return { base: c.base, t: c.t.slice(0, n), o: c.o.slice(0, n), h: c.h.slice(0, n), l: c.l.slice(0, n), c: c.c.slice(0, n), ...(c.v ? { v: c.v.slice(0, n) } : {}) } }).filter(c => c.t.length) }
+        const t1 = Date.now(), a = opts.pitCheck(handCut, pitAt), t2 = Date.now(), b = opts.pitCheck(data, pitAt)
+        const A = decisionDigest(a), B = decisionDigest(b)
+        const diffs = A.filter((x, i) => JSON.stringify(x) !== JSON.stringify(B[i])).map(x => x.id)
+        const later = data.coins.reduce((k, c) => k + c.t.filter(t => t >= pitAt).length, 0)
+        res.setHeader('content-type', 'application/json'); res.setHeader('cache-control', 'no-store')
+        return res.status(200).send(JSON.stringify({ pit: new Date(pitAt).toISOString(), identical: diffs.length === 0 && A.length === B.length, rules: A.length, diffs: diffs.slice(0, 10), barsAfterCut: later, coins: data.coins.length, passing: A.filter(x => x.pass).length, tradesBeforeCut: A.reduce((k, x) => k + (x.all?.n || 0), 0), ms: [t2 - t1, Date.now() - t2] }))
+      }
       const now = Date.now()
       const state = await withLedger(sid, saved ? structuredClone(saved) : newState(rate, now), s => stepFn(s, market, now), { dry })
       if (!dry) saved = await rpc('lab_put', { sid, payload: state })

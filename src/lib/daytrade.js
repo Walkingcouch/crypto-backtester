@@ -14,9 +14,10 @@
 // Each with and without a daily-trend filter (price above its ~20-day average).
 import { assess, countTrials } from './rigor.js'
 import { regimeAt, regimeWeight } from './regime.js'
-import { preSeal, sealedLast } from './exam.js'
-import { exploreCoach, failFast, recordLive } from './explore.js'
-import { ACCOUNTS, coach, estimate, stats, withLiveCost } from './lab.js'
+import { closedBy, currentSeal, knownAt, preSeal, sealedLast } from './exam.js'
+import { exploreCoach, exploreScore, failFast, recordLive } from './explore.js'
+import { rankFound, scoreSnapshots, stepBenchmark, takeSnapshot } from './scorecard.js'
+import { ACCOUNTS, coach, estimate, LIVE_ACCOUNT, stats, withLiveCost } from './lab.js'
 
 export const HOUR = 3_600_000
 export const DAY = 86_400_000
@@ -160,14 +161,14 @@ export function dayEvents(r, data) {
       const hold = holdHours(r, D.hour[e])
       const last = e + hold - 1
       if (last >= n) break
-      const entry = coin.o[e], stop = entry * (1 - dayStopPct(D.hvol[i], hold))
+      const sp = dayStopPct(D.hvol[i], hold), entry = coin.o[e], stop = entry * (1 - sp)
       let exit = NaN, j = e
       for (; j <= last; j++) {
         if (coin.l[j] <= stop) { exit = j === e ? stop : Math.min(coin.o[j], stop); break }
         if (r.kind === 'mr' && coin.c[j] >= D.sma24[j]) { exit = coin.c[j]; break }
         if (j === last) { exit = coin.c[j]; break }
       }
-      out.push({ base: coin.base, t: coin.t[i], exitT: coin.t[j] + HOUR, g: exit / entry - 1 })
+      out.push({ base: coin.base, t: coin.t[i], exitT: coin.t[j] + HOUR, g: exit / entry - 1, sp })
       busy = j + 1
     }
   }
@@ -175,11 +176,13 @@ export function dayEvents(r, data) {
 }
 
 /** Re-test all rules: chosen on older data, checked on the held-back last 60 days. */
-export function discoverDay(data, S = DT, state) {
-  const last = sealedLast(data)              // choosing never sees the sealed exam window (exam.js)
+export function discoverDay(data0, S = DT, state, now = Date.now()) {
+  const data = knownAt(data0, now)           // only what was known at `now` (same answer with later data cut back)
+  const seal = currentSeal(now)
+  const last = sealedLast(data, seal)        // choosing never sees the sealed exam window (exam.js)
   const cut = last - S.validDays * DAY
   const found = allDayRules().map(r => {
-    const evAll = dayEvents(r, data), ev = preSeal(evAll)
+    const evAll = closedBy(dayEvents(r, data), now), ev = preSeal(evAll, seal)
     r.ev = ev
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     const valid = stats(ev.filter(e => e.t >= cut), S.refCost)
@@ -187,16 +190,16 @@ export function discoverDay(data, S = DT, state) {
     const pass = train.n >= S.minTrain && train.t >= S.minTrainT && valid.n >= S.minValid && valid.mean > 0
     return { ...r, spec: { kind: r.kind, n: r.n, k: r.k, K: r.K, z: r.z, last: r.last, H: r.H, tf: r.tf }, text: describeDay(r), train, valid, all, pass, ev, evAll }
   })
-  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now: Date.now() } : null, state })
+  return assess(found, data, { cost: S.refCost, exitOffset: HOUR, warmup: 500, trials: countTrials(state, found.map(f => f.id)), family: f => f.kind, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: state ? { state, now } : null, state })
 }
 
 /**
  * Walk-forward: each month, pick the best rule on the previous 120 days only, then record what it
  * earned that month. Stitched together, this is what the whole selection process would have made.
  */
-export function walkForward(found, data, S = DT) {
+export function walkForward(found, data, S = DT, now = Date.now()) {
   const first = Math.min(...data.coins.map(c => c.t[500] ?? Infinity))
-  const last = sealedLast(data)   // stop at the sealed exam window
+  const last = sealedLast(data, currentSeal(now))   // stop at the sealed exam window
   const months = [], trades = []
   for (let start = first + S.wfTrainDays * DAY; start + S.wfTestDays * DAY <= last; start += S.wfTestDays * DAY) {
     const end = start + S.wfTestDays * DAY
@@ -285,8 +288,8 @@ export function stepDay(state, market, now, S = DT) {
   const unchecked = state.found?.length && !state.found.some(f => (f.rigor?.v ?? 0) >= 6)
   if ((now - state.lastCoach >= S.coachEveryDays * DAY - HOUR || (S.practiceRules && noChamp) || unchecked) && data.coins.length && data.coins.some(c => c.c.length > 5000)) {
     const SL = withLiveCost(state, market, S)          // choose and check at CoinSpot's real round trip
-    const found = discoverDay(data, SL, state)
-    state.walk = walkForward(found, data, SL)
+    const found = discoverDay(data, SL, state, now)
+    state.walk = walkForward(found, data, SL, now)
     if (found.some(f => f.pass)) {
       for (const r of state.rules) if (r.practice && r.status !== 'retired') { r.status = 'retired'; r.reason = 'a rule passed the checks, so practice ended' }
       coach(state, found, now, S)
@@ -296,6 +299,16 @@ export function stepDay(state, market, now, S = DT) {
     state.coinsScanned = market.coins.map(c => c.base)
     state.lastCoach = now
     ruleByV.clear(); for (const r of state.rules) ruleByV.set(r.v, r)
+    // the engine's scorecard: this week's ranking, saved before the outcome is known (scorecard.js)
+    const nck = f => Object.values(f.rigor?.checks || {}).filter(Boolean).length
+    const ranked = rankFound(found, { score: f => (f.pass ? 1000 : 0) + 10 * nck(f) + Math.max(-9.99, Math.min(9.99, exploreScore(state, f, SL))) })
+    takeSnapshot(state, ranked, now, { lab: 'daytrade', cost: SL.refCost, horizonDays: 7, version: 1 })
+  }
+  if (state.scorecard?.snaps?.length && now - (state.scorecard.lastScored || 0) >= DAY - HOUR && data.coins.some(c => c.c.length > 5000)) {
+    const cache = new Map(), menu = new Map(allDayRules().map(r => [r.id, r]))
+    const eventsOf = spec => { const k = JSON.stringify(spec); if (!cache.has(k)) cache.set(k, dayEvents(spec, data)); return cache.get(k) }
+    scoreSnapshots(state, eventsOf, now, { specById: id => menu.get(id) || null, maxHoldDays: 1 })
+    state.scorecard.lastScored = now
   }
 
   // 2. daily loss limit bookkeeping
@@ -353,6 +366,12 @@ export function stepDay(state, market, now, S = DT) {
   // 5. valuation
   push(state.history, { t: now, ...Object.fromEntries(Object.values(state.accounts).map(a => [a.id, +value(a).toFixed(2)])) }, 1000)
   for (const a of Object.values(state.accounts)) { a.valueAud = value(a); a.valueUsd = value(a) / rate }
+  const eng = state.accounts[S.liveAccount || LIVE_ACCOUNT]
+  if (eng && price('BTC') > 0) {
+    const v = value(eng)
+    const b = stepBenchmark(state, { now, btc: price('BTC'), accountValue: v, exposure: v > 0 ? 1 - eng.cashAud / v : 0 })
+    if (b) state.history[state.history.length - 1].btcBench = +(b.value).toFixed(2)
+  }
   state.regimeNow = Object.fromEntries([['', regimeAt(market.deep ? { coins: market.deep } : data, '', now + DAY)]].filter(([, v]) => v))
   state.audPerUsd = rate
   state.prices = {}

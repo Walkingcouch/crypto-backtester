@@ -8,7 +8,7 @@
 //    RISES with the number of ideas tried (the expected best t-score of that many coin flips).
 //  - Simpler ideas are preferred: each extra condition costs fitness.
 import { allTrials, assess, RIGOR_V } from './rigor.js'
-import { preSeal, sealedLast } from './exam.js'
+import { closedBy, currentSeal, knownAt, preSeal, sealedLast } from './exam.js'
 import { comboId, describeCombo, HOLDS, randomCond, STOPS, validCombo } from './blocks.js'
 import { DAY, events, LAB, stats } from './lab.js'
 
@@ -63,11 +63,13 @@ function randomSpec(rnd) {
  * One generation. Called by lab.step() in place of the Lab's fixed discover().
  * Returns the graduates in the Lab's "found" format so the same coach can trade them.
  */
-export function evolve(data, S = EXPLORE, state, now) {
+export function evolve(data0, S = EXPLORE, state, now = Date.now()) {
+  const data = knownAt(data0, now)           // only what was known at `now`
+  const seal = currentSeal(now)
   const ex = (state.explore ||= { gen: 0, tried: 0, holdoutTests: 0, population: [], graduates: [], seen: [], log: [] })
   ex.gen++
   const rnd = rng((now / 3_600_000) ^ (ex.gen * 2654435761))
-  const last = sealedLast(data)              // breeding and the held-back look never see the sealed exam window
+  const last = sealedLast(data, seal)        // breeding and the held-back look never see the sealed exam window
   const cut = last - S.validDays * DAY
   const seen = new Set(ex.seen)
   if (S.benchmarks && !data.bench) { data.bench = {}; for (const [m, b] of Object.entries(S.benchmarks)) data.bench[m] = data.coins.find(c => c.base === b) }
@@ -92,7 +94,7 @@ export function evolve(data, S = EXPLORE, state, now) {
     if (seen.has(id)) continue
     seen.add(id); ex.tried++; added++
     const full = { kind: 'combo', ...spec, ...(S.asset ? { asset: S.asset } : {}) }
-    const ev = preSeal(events(full, data))
+    const ev = preSeal(closedBy(events(full, data), now), seal)
     const train = stats(ev.filter(e => e.exitT < cut), S.refCost)
     if (train.n < S.minTrades) continue
     const fitness = train.t - S.complexityCost * (spec.conds.length - 1)
@@ -120,7 +122,7 @@ export function evolve(data, S = EXPLORE, state, now) {
   for (const p of ex.population) {
     if (p.tested || p.train.t < bar || p.train.n < S.minGradTrades) continue
     p.tested = true; ex.holdoutTests++
-    const evAll = events(p.spec, data), ev = preSeal(evAll)
+    const evAll = closedBy(events(p.spec, data), now), ev = preSeal(evAll, seal)
     p.valid = stats(ev.filter(e => e.t >= cut), S.refCost)
     p.all = stats(evAll)
     p.passed = p.valid.n >= 15 && p.valid.mean > 0 && p.valid.t >= 1
@@ -141,7 +143,7 @@ export function evolve(data, S = EXPLORE, state, now) {
   // graduates checked under older checks (or none) must pass the current ones, or they leave
   ex.graduates = ex.graduates.filter(g => {
     if (g.rigor?.v === RIGOR_V) return true
-    const evAll = events(g.spec, data), ev = preSeal(evAll)
+    const evAll = closedBy(events(g.spec, data), now), ev = preSeal(evAll, seal)
     const [c] = assess([{ id: g.id, spec: g.spec, ev, evAll, pass: true, train: g.train }], data, { cost: S.refCost, trials: allTrials(state, state.trialsEff), family: () => g.id, portfolio: { maxOpen: S.maxOpen, slot: Math.min(S.maxPosition, S.maxInvested / S.maxOpen) }, exam: { state, now } })
     g.rigor = c.rigor
     if (!c.pass) ex.log.push({ t: now, id: g.id, text: g.text, trainT: g.train.t, valid: g.valid, passed: false, rigor: c.rigor, note: 'removed: failed the updated professional checks (real daily ups and downs, beating random by more than costs, beating the index)' })
