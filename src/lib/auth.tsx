@@ -5,6 +5,31 @@ import { supabase } from './supabase'
 interface AuthState { session: Session | null; name: string; ready: boolean; refreshName: () => void }
 const Ctx = createContext<AuthState>({ session: null, name: '', ready: true, refreshName: () => {} })
 
+// Stay signed in until signing out. The browser can lose Supabase's saved session on its own
+// (Safari clears site storage after 7 days without a visit), so the refresh token is also kept in
+// a server-set cookie the page can't read (api/session.js). If the session goes missing without a
+// sign-out, it's restored from there once.
+const backup = (action: 'save' | 'restore' | 'clear', refresh_token?: string) =>
+  fetch('/api/session', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, refresh_token }) })
+    .then(r => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ refresh_token?: string | null } | null>
+let lastSaved = '', signingOut = false, restoreTried = false
+const keep = (s: Session | null) => { if (s?.refresh_token && s.refresh_token !== lastSaved) { lastSaved = s.refresh_token; void backup('save', s.refresh_token) } }
+async function restore(): Promise<Session | null> {
+  if (!supabase || restoreTried || signingOut) return null
+  restoreTried = true
+  const j = await backup('restore')
+  if (!j?.refresh_token) return null
+  const { data, error } = await supabase.auth.refreshSession({ refresh_token: j.refresh_token })
+  if (error) { if (!/fetch|network|timeout/i.test(error.message)) void backup('clear'); return null }
+  return data.session
+}
+/** Sign out everywhere on this browser: the backup goes first, so no tab can bring the session back. */
+export async function signOut() {
+  signingOut = true
+  await backup('clear')
+  await supabase?.auth.signOut()
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [name, setName] = useState('')
@@ -17,10 +42,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // local layout checks only (never set in a real build): pretend to be signed in
     if (!supabase) return
-    supabase.auth.getSession().then(({ data }) => { setSession(data.session); loadName(data.session); setReady(true) })
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => { setSession(s); loadName(s) })
+    supabase.auth.getSession().then(async ({ data }) => {
+      const s = data.session ?? await restore()
+      setSession(s); loadName(s); keep(s); setReady(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((e, s) => {
+      setSession(s); loadName(s); keep(s)
+      // (after this callback returns: auth calls made inside it would wait on themselves)
+      if (e === 'SIGNED_OUT' && !signingOut) setTimeout(() => void restore().then(r => { if (r) { setSession(r); loadName(r) } }), 0)
+    })
     // signing in from the email link happens in another tab: pick the session up here as soon as
     // that tab saves it (storage event), or when this tab is looked at again
     const recheck = () => { supabase!.auth.getSession().then(({ data }) => { setSession(cur => (cur?.access_token === data.session?.access_token ? cur : (loadName(data.session), data.session))) }) }

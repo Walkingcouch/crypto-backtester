@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { useAuth } from '../lib/auth'
+import { signOut, useAuth } from '../lib/auth'
 
 // Signing in: the email has a link AND a 6-digit code. Typing the code signs in right here. If the
 // link is used instead (it opens a new tab), this tab notices the sign-in and carries on by itself,
@@ -105,7 +105,7 @@ export default function Account() {
             <button className="btn btn-primary">Save name</button>
             {savedName && <span className="tag green">Saved</span>}
             <span className="spacer" />
-            <button type="button" className="btn btn-ghost" onClick={() => supabase!.auth.signOut()}>Sign out</button>
+            <button type="button" className="btn btn-ghost" onClick={() => void signOut()}>Sign out</button>
           </div>
         </form>
       </div>
