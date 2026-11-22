@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { signOut, useAuth } from '../lib/auth'
+import { AppLockSettings } from '../components/AppLock'
 
 // Signing in: the email has a link AND a 6-digit code. Typing the code signs in right here. If the
 // link is used instead (it opens a new tab), this tab notices the sign-in and carries on by itself,
@@ -109,6 +110,7 @@ export default function Account() {
           </div>
         </form>
       </div>
+      <AppLockSettings uid={session.user.id} email={session.user.email || ''} />
     </main>
   )
 }

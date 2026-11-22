@@ -527,3 +527,4 @@ code { overflow-wrap: anywhere; }
 pre { overflow-x: auto; max-width: 100%; }
 /* phones: fade the right edge of the sideways-scrolling tab row so it's clear there's more */
 @media (max-width: 720px) { .nav { mask-image: linear-gradient(to right, #000 85%, transparent); -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); padding-right: 24px; } }
+.lock-icon { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto; background: var(--accent-soft); color: var(--accent); }

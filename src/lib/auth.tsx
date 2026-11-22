@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
+import { lockSettings } from './applock'
 
 interface AuthState { session: Session | null; name: string; ready: boolean; refreshName: () => void }
 const Ctx = createContext<AuthState>({ session: null, name: '', ready: true, refreshName: () => {} })
@@ -9,15 +10,25 @@ const Ctx = createContext<AuthState>({ session: null, name: '', ready: true, ref
 // (Safari clears site storage after 7 days without a visit), so the refresh token is also kept in
 // a server-set cookie the page can't read (api/session.js). If the session goes missing without a
 // sign-out, it's restored from there once.
-const backup = (action: 'save' | 'restore' | 'clear', refresh_token?: string) =>
-  fetch('/api/session', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, refresh_token }) })
+const backup = (action: 'save' | 'restore' | 'clear', refresh_token?: string, locked?: boolean) =>
+  fetch('/api/session', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, refresh_token, locked }) })
     .then(r => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ refresh_token?: string | null } | null>
 let lastSaved = '', signingOut = false, restoreTried = false
-const keep = (s: Session | null) => { if (s?.refresh_token && s.refresh_token !== lastSaved) { lastSaved = s.refresh_token; void backup('save', s.refresh_token) } }
+let lastLocked = false
+const keep = (s: Session | null, force = false) => {
+  if (!s?.refresh_token) return
+  const locked = !!lockSettings(s.user.id)
+  if (!force && s.refresh_token === lastSaved && locked === lastLocked) return
+  lastSaved = s.refresh_token; lastLocked = locked
+  void backup('save', s.refresh_token, locked)
+}
+/** Call after the app lock is turned on or off, so the backup knows. */
+export const syncBackup = () => { void supabase?.auth.getSession().then(({ data }) => keep(data.session, true)) }
 async function restore(): Promise<Session | null> {
   if (!supabase || restoreTried || signingOut) return null
   restoreTried = true
-  const j = await backup('restore')
+  const j = await backup('restore') as { refresh_token?: string | null; locked?: boolean } | null
+  if (j?.locked) { void backup('clear'); return null }     // had an app lock: sign in again with the email code
   if (!j?.refresh_token) return null
   const { data, error } = await supabase.auth.refreshSession({ refresh_token: j.refresh_token })
   if (error) { if (!/fetch|network|timeout/i.test(error.message)) void backup('clear'); return null }
