@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { arrivedByLink, supabase } from '../lib/supabase'
 import { handOff, signOut, useAuth } from '../lib/auth'
-import { codeOf, post as relayPost, sealFor, startWaiting } from '../lib/relay'
+import { codeOf, emailId, post as relayPost, sealFor, startWaiting } from '../lib/relay'
 import { AppLockSettings } from '../components/AppLock'
 
 // Signing in: the email has a link AND a 6-digit code. Typing the code signs in right here. If the
@@ -29,7 +29,7 @@ export default function Account() {
   const [linkTab, setLinkTab] = useState(false)
   const [myCode, setMyCode] = useState('')
   const [approve, setApprove] = useState<null | { pub: JsonWebKey; device: string; at: number; code: string }>(null)
-  const [handed, setHanded] = useState(false)
+  const [handed, setHanded] = useState<false | { code: string | null }>(false)
   // the link opened here: if ANOTHER screen is waiting (its request isn't this browser's own), ask to
   // approve it; otherwise this is the same browser and the asking tab picks the sign-in up itself
   const [linkChecked, setLinkChecked] = useState(!arrivedByLink)
@@ -64,7 +64,12 @@ export default function Account() {
     <main className="page">
       <div className="card" style={{ maxWidth: 420, margin: '24px auto', textAlign: 'center' }}>
         <h1>Approved</h1>
-        <p>Your other screen is signing in now. You can close this page.</p>
+        <p>Your other screen should sign in by itself within a few seconds.</p>
+        {handed.code && <>
+          <p className="muted small" style={{ marginBottom: 4 }}>If it doesn't, type this code there:</p>
+          <div className="mono" style={{ fontSize: 36, fontWeight: 700, letterSpacing: 8, margin: '4px 0 12px' }}>{handed.code}</div>
+          <p className="muted small">Works once, for 30 minutes.</p>
+        </>}
       </div>
     </main>
   )
@@ -80,9 +85,9 @@ export default function Account() {
           setBusy(true); setErr(null)
           try {
             const box = await sealFor(approve.pub, session.refresh_token)
-            const r = await relayPost({ action: 'approve', box }, session.access_token)
+            const r = await relayPost({ action: 'approve', box, rt: session.refresh_token }, session.access_token)
             if (!r.ok) throw new Error(r.error || 'approval failed')
-            await handOff(); setApprove(null); setHanded(true)
+            await handOff(); setApprove(null); setHanded({ code: r.code || null })
           } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
         }}>{busy ? 'Approving…' : 'Yes, the code matches: sign that screen in'}</button>
         <button className="btn btn-ghost btn-block" style={{ marginTop: 8 }} onClick={async () => { await relayPost({ action: 'decline' }, session.access_token); setApprove(null) }}>Not me / sign in on this device instead</button>
@@ -111,15 +116,26 @@ export default function Account() {
             <div className="notice ok">Sent to <b>{email}</b>. It can take a minute; check spam too.</div>
             {myCode && <div className="flex small" style={{ gap: 8, alignItems: 'center', margin: '8px 0' }}><span className="spinner" aria-hidden="true" /> Waiting for you to approve… <button type="button" className="btn btn-ghost btn-sm" onClick={() => window.dispatchEvent(new Event('signin:check'))}>Check now</button></div>}
             {myCode && (STANDALONE
-              ? <div className="notice info"><b>Using the Home Screen app?</b> Tap the link in the email. It opens in Safari, which asks you to approve this sign-in with the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>. Approve, then come back to this app: it signs in by itself within a few seconds.</div>
-              : <p className="small">No code in the email, or opening it on <b>another phone or computer</b>? Tap the link there and approve: this page signs in by itself. It will show the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>; only approve if it matches.</p>)}
+              ? <div className="notice info"><b>Using the Home Screen app?</b> Tap the link in the email. It opens in Safari, which asks you to approve this sign-in with the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>. Approve, then come back to this app: it signs in by itself within a few seconds, or type the 6-digit code Safari shows into the box below.</div>
+              : <p className="small">No code in the email, or opening it on <b>another phone or computer</b>? Tap the link there and approve: this page signs in by itself, or type the 6-digit code it shows below. It will show the code <b className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{myCode}</b>; only approve if it matches.</p>)}
             <form onSubmit={async e => {
               e.preventDefault(); setBusy(true); setErr(null)
+              // a 6-digit code from the approval screen (hand-over) first, then the email's own code
+              if (/^\d{6}$/.test(code.trim())) {
+                const h = await relayPost({ action: 'redeem', id: await emailId(email), code: code.trim() })
+                if (h.rt) {
+                  const { error: e2 } = await supabase!.auth.refreshSession({ refresh_token: h.rt })
+                  setBusy(false)
+                  if (e2) setErr(e2.message)
+                  return
+                }
+                if (h.error && !/no approved sign-in/.test(h.error)) { setBusy(false); setErr(`Approval code: ${h.error}`); return }
+              }
               const { error } = await supabase!.auth.verifyOtp({ email, token: code.trim(), type: 'email' })
               setBusy(false)
               if (error) setErr(error.message.includes('expired') || error.message.includes('invalid') ? 'That code is wrong or has expired. Check the latest email, or send a new one.' : error.message)
             }}>
-              <label className="field"><span>Type the 6-digit code from the email (if it has one)</span>
+              <label className="field"><span>Type the 6-digit code from the approval screen (or from the email)</span>
                 <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6,8}" maxLength={8} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, ''))} placeholder="123456" autoFocus /></label>
               <button className="btn btn-primary btn-block" disabled={busy || code.length < 6}>{busy ? 'Checking…' : 'Sign in'}</button>
             </form>
