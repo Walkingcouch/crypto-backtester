@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LabTabs } from './Lab'
 
 interface Ev { t: number; market: 'US' | 'ASX'; country: string; title: string; impact: string; forecast: string | null; previous: string | null; kind: string }
 interface Meeting { t: number; bank: string; title: string; market: string }
@@ -54,10 +53,9 @@ export default function EconCalendar() {
   return (
     <main className="page narrow">
       <div className="page-head">
-        <div className="lab-family">Shares lab · US &amp; ASX</div>
+        <div className="lab-family">Markets</div>
         <h1>Economic calendar</h1>
-        <LabTabs family="shares" />
-        <p>The releases and central-bank decisions that move US and Australian shares, in Darwin time. A Fed decision or a hot inflation number can swing the whole market at the open, so the day-trading lab stands aside from new trades within an hour of any high-impact release for that market.</p>
+        <p>The releases and central-bank decisions that move US and Australian shares (and usually crypto with them), in Darwin time. A Fed decision or a hot inflation number can swing the whole market at the open, so the day-trading lab stands aside from new trades within an hour of any high-impact release for that market.</p>
       </div>
 
       {error && <div className="notice err">Couldn't load the calendar: {error}</div>}

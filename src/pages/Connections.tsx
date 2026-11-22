@@ -38,7 +38,6 @@ export default function Connections() {
         <div className="eyebrow">Automation</div>
         <h1>Connections</h1>
         <p className="muted">Connect exchanges and bot wallets from here instead of Vercel. Keys are encrypted on the server before they're saved, never shown again, and never sent to any browser. Each person connects their own; you can see others' connections but not change them.</p>
-        <p className="small"><Link to="/markets?view=auto">← Back to Automation</Link></p>
       </div>
       {err && <div className="notice err">{err}</div>}
       {!st ? <div className="empty">Loading connections…</div> : <>

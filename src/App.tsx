@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
-import { NavLink, Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
+import { Route, Routes, Link, Navigate, useLocation } from 'react-router-dom'
+import { MobileMenu, SubNav, TopNav } from './components/SiteNav'
+import AutomationPage from './pages/Automation'
 import Brief from './pages/Brief'
 import Guide from './pages/Guide'
 import History from './pages/History'
@@ -19,8 +20,6 @@ export default function App() {
   const here = loc.pathname === '/account' ? '/' : loc.pathname + loc.search
   const { session, name } = useAuth()
   const { cur, setCur } = useCurrency()
-  // phones: the tab row scrolls sideways, so bring the current page's tab into view
-  useEffect(() => { document.querySelector('.nav a.active')?.scrollIntoView({ inline: 'center', block: 'nearest' }) }, [loc.pathname])
   return (
     <>
       <header className="topbar">
@@ -31,16 +30,8 @@ export default function App() {
             </span>
             <span className="brand-name">Backtester</span>
           </Link>
-          <nav className="nav">
-            <NavLink to="/today">Today</NavLink>
-            <NavLink to="/markets">Markets</NavLink>
-            <NavLink to="/predict">Predict</NavLink>
-            <NavLink to="/picks">Picks</NavLink>
-            <NavLink to="/lab">Crypto lab</NavLink>
-            <NavLink to="/shares">Shares lab</NavLink>
-            <NavLink to="/history">History</NavLink>
-            <NavLink to="/guide">Guide</NavLink>
-          </nav>
+          <TopNav />
+          <MobileMenu />
           <button className="refresh-btn" onClick={() => window.location.reload()} title="Refresh" aria-label="Refresh the page">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" /></svg>
           </button>
@@ -56,12 +47,14 @@ export default function App() {
           )}
         </div>
       </header>
+      <SubNav />
       <Routes>
         <Route path="/" element={<Navigate to="/markets" replace />} />
         <Route path="/today" element={<Brief />} />
         <Route path="/guide" element={<Guide />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/markets" element={<Markets />} />
+        <Route path="/markets" element={<Markets view="coins" />} />
+        <Route path="/markets/flow" element={<Markets view="flow" />} />
+        <Route path="/markets/calendar" element={<EconCalendar />} />
         <Route path="/predict" element={<Predict />} />
         <Route path="/picks" element={<Picks />} />
         <Route path="/lab" element={<LabSwing />} />
@@ -70,12 +63,16 @@ export default function App() {
         <Route path="/shares" element={<SharesSwing />} />
         <Route path="/shares/explore" element={<SharesExplore />} />
         <Route path="/shares/daytrade" element={<SharesDay />} />
-        <Route path="/shares/calendar" element={<EconCalendar />} />
+        <Route path="/automation" element={<AutomationPage />} />
+        <Route path="/connections" element={<Connections />} />
+        <Route path="/history" element={<History tab="saved" />} />
+        <Route path="/history/checks" element={<History tab="checks" />} />
+        <Route path="/account" element={<Account />} />
+        {/* old addresses keep working */}
+        <Route path="/shares/calendar" element={<Navigate to="/markets/calendar" replace />} />
         <Route path="/lab/stocks" element={<Navigate to="/shares" replace />} />
         <Route path="/runs" element={<Navigate to="/history" replace />} />
-        <Route path="/ledger" element={<Navigate to="/history?tab=checks" replace />} />
-        <Route path="/account" element={<Account />} />
-        <Route path="/connections" element={<Connections />} />
+        <Route path="/ledger" element={<Navigate to="/history/checks" replace />} />
         <Route path="*" element={<div className="page empty">Page not found. <Link to="/markets">Back to Markets</Link></div>} />
       </Routes>
       <footer className="footer">

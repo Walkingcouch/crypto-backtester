@@ -176,18 +176,6 @@ function words(st: LabState, family: Family): LabState {
   return st
 }
 
-export function LabTabs({ family }: { family: Family }) {
-  const base = family === 'crypto' ? '/lab' : '/shares'
-  return (
-    <div className="lab-tabs">
-      <NavLink to={base} end>Swing rules</NavLink>
-      <NavLink to={`${base}/explore`}>New ideas</NavLink>
-      <NavLink to={`${base}/daytrade`}>Day trading</NavLink>
-      {family === 'shares' && <NavLink to="/shares/calendar">Economic calendar</NavLink>}
-    </div>
-  )
-}
-
 function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?: number) => ReactNode } }) {
   const S = v.S
   const [state, setState] = useState<LabState | null>(null)
@@ -231,7 +219,6 @@ function LabView({ v }: { v: Omit<Variant, 'stops'> & { stops: (S: Settings, H?:
       <div className="page-head">
         <div className="lab-family">{v.family === 'crypto' ? 'Crypto lab' : 'Shares lab · US & ASX'}</div>
         <h1>{v.title}</h1>
-        <LabTabs family={v.family} />
         <p>{v.intro} It runs on its own {v.every}. Nothing here places real orders.</p>
         <div className="howto">
           {v.howto.map(([b, t], k) => <div key={k}><span className="n">{k + 1}</span><b>{b}</b>{t}</div>)}

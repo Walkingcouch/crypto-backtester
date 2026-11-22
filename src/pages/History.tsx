@@ -1,18 +1,15 @@
-import { useSearchParams } from 'react-router-dom'
+import { Navigate, useSearchParams } from 'react-router-dom'
 import Runs from './Runs'
 import Ledger from './Ledger'
 
-export default function History() {
-  const [params, setParams] = useSearchParams()
-  const tab = params.get('tab') === 'checks' ? 'checks' : 'saved'
+export default function History({ tab }: { tab: 'saved' | 'checks' }) {
+  const [params] = useSearchParams()
+  if (params.get('tab') === 'checks') return <Navigate to="/history/checks" replace />
   return (
     <main className="page narrow">
       <div className="page-head">
-        <h1>History</h1>
-        <div className="seg" style={{ maxWidth: 360 }}>
-          <button className={tab === 'saved' ? 'on' : ''} onClick={() => setParams({})}>Saved results</button>
-          <button className={tab === 'checks' ? 'on' : ''} onClick={() => setParams({ tab: 'checks' })}>Final checks</button>
-        </div>
+        <div className="eyebrow">History</div>
+        <h1>{tab === 'saved' ? 'Saved results' : 'Final checks'}</h1>
       </div>
       {tab === 'saved' ? <Runs embedded /> : <Ledger embedded />}
     </main>

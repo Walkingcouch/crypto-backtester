@@ -69,7 +69,7 @@ export default function AutomationPanel() {
   const act = async (body: object) => { setBusy(true); try { await call(body); await load() } catch (e) { setError(String((e as Error).message)) } finally { setBusy(false) } }
 
   if (!ready) return null
-  if (!session) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">Sign in with an admin account to see wallet balances, orders and the kill switch. <Link to="/account" state={{ from: "/markets?view=auto" }}>Sign in</Link></p></section>
+  if (!session) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">Sign in with an admin account to see wallet balances, orders and the kill switch. <Link to="/account" state={{ from: "/automation" }}>Sign in</Link></p></section>
   if (error && !all) return <section className="card"><h2>Execution &amp; guardrails</h2><div className="notice err">{error}</div></section>
   if (!all) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">Loading…</p></section>
   if (!all.accounts.length) return <section className="card"><h2>Execution &amp; guardrails</h2><p className="muted">{all.note}</p></section>

@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import CompareChart, { type CompareLine } from '../components/CompareChart'
 import CoinTable, { cls, MarketNotes, pctTxt } from '../components/CoinTable'
 import { Info } from '../components/Info'
 import WhereToBuy from '../components/WhereToBuy'
 import SmartMoney from '../components/SmartMoney'
 import SignalReport from '../components/SignalReport'
-import AutomationPanel from '../components/AutomationPanel'
 import { PERIODS, pricePath, type Period } from '../lib/markets'
 import { rateAtSmooth } from '../lib/currency'
 import { useCoinMarket } from '../lib/useCoinMarket'
@@ -14,7 +13,7 @@ import { useCoinMarket } from '../lib/useCoinMarket'
 const PALETTE = ['#0b7a5c', '#3b6fd8', '#d9822b', '#b5459b', '#2a9db5', '#c2412d', '#7b5ce0', '#8a8f2d']
 const MAX_SELECT = 8
 
-export default function Markets() {
+export default function Markets({ view = 'coins' }: { view?: 'coins' | 'flow' }) {
   const [params, setParams] = useSearchParams()
   const selected = useMemo(() => (params.get('compare') || '').split(',').filter(Boolean), [params])
   const M = useCoinMarket({ keep: selected, initialPeriod: (params.get('period') as Period) || '30d' })
@@ -55,24 +54,14 @@ export default function Markets() {
   const periodLabel = PERIODS.find(p => p.id === period)!.label
   const up = all.filter(c => c.trend === 'up').length, down = all.filter(c => c.trend === 'down').length
 
-  const view = params.get('view') === 'flow' ? 'flow' : params.get('view') === 'auto' ? 'auto' : 'coins'
-  const setView = (v: string) => { const p = new URLSearchParams(params); if (v === 'coins') p.delete('view'); else p.set('view', v); setParams(p, { replace: true }) }
-  const tabs = (
-    <div className="lab-tabs">
-      <button className={view === 'coins' ? 'active' : ''} onClick={() => setView('coins')}>Coins</button>
-      <button className={view === 'flow' ? 'active' : ''} onClick={() => setView('flow')}>Smart money &amp; political flow</button>
-      <button className={view === 'auto' ? 'active' : ''} onClick={() => setView('auto')}>Automation</button>
-    </div>
-  )
-  if (view === 'auto') return (
-    <main className="page narrow">
-      <div className="page-head"><h1>Markets</h1>{tabs}</div>
-      <AutomationPanel />
-    </main>
-  )
+  // old addresses (?view=flow / ?view=auto) go to the pages' own addresses now
+  const legacy = params.get('view')
+  if (legacy === 'flow') return <Navigate to="/markets/flow" replace />
+  if (legacy === 'auto') return <Navigate to="/automation" replace />
   if (view === 'flow') return (
     <main className="page narrow">
-      <div className="page-head"><h1>Markets</h1>{tabs}</div>
+      <div className="page-head"><div className="eyebrow">Markets</div><h1>Smart money &amp; news</h1>
+        <p>Trades disclosed by US and Australian politicians and company insiders, market-moving posts, crypto crowd chatter and central-bank tone, in one feed, with a report card on which streams have been worth following.</p></div>
       <SignalReport />
       <SmartMoney />
     </main>
@@ -81,8 +70,8 @@ export default function Markets() {
   return (
     <main className="page">
       <div className="page-head">
-        <h1>Markets</h1>
-        {tabs}
+        <div className="eyebrow">Markets</div>
+        <h1>Coins</h1>
         <p>Every actively traded coin on Binance (USDT pairs), ranked by performance. Tick coins to compare them on one chart.</p>
         <MarketNotes M={M} />
       </div>

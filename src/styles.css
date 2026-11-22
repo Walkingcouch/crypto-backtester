@@ -461,14 +461,6 @@ table.record td:first-child { white-space: nowrap; }
 .refresh-btn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface, transparent); color: var(--muted); cursor: pointer; }
 .refresh-btn:active { transform: rotate(-30deg); }
 .refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
-/* phones: the menu gets its own full-width row under the logo and buttons */
-@media (max-width: 640px) {
-  .topbar-inner { flex-wrap: wrap; height: auto; padding-top: 8px; padding-bottom: 6px; row-gap: 4px; gap: 10px; }
-  .topbar-inner .nav { order: 5; flex-basis: 100%; margin: 0 -6px; }
-  .topbar-inner .refresh-btn { margin-left: auto; }
-  .nav a { padding: 6px 9px; font-size: 15px; }
-}
-
 /* economic calendar */
 .econ-list { list-style: none; padding: 0; margin: 0; }
 .econ-item { display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
@@ -526,10 +518,44 @@ main.page { overflow-wrap: break-word; }
 code { overflow-wrap: anywhere; }
 pre { overflow-x: auto; max-width: 100%; }
 /* phones: fade the right edge of the sideways-scrolling tab row so it's clear there's more */
-@media (max-width: 720px) { .nav { mask-image: linear-gradient(to right, #000 85%, transparent); -webkit-mask-image: linear-gradient(to right, #000 85%, transparent); padding-right: 24px; } }
 .lock-icon { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; margin: 0 auto; background: var(--accent-soft); color: var(--accent); }
 .conn-list { display: grid; gap: 10px; }
 .conn { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
 .conn-head { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 2px; }
 .conn .mono { overflow-wrap: anywhere; }
 textarea { width: 100%; font: inherit; border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; background: var(--surface); color: var(--text); }
+
+/* ---- site menu: sections with dropdowns (desktop), one Menu list (phones), a tab row per section ---- */
+.eyebrow { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+.nav-desktop { overflow: visible; align-items: center; }
+.nav-group { position: relative; }
+.nav-desktop > a, .nav-group > button { color: var(--muted); padding: 6px 10px; border-radius: 8px; font: 500 15px Inter, sans-serif; white-space: nowrap; background: none; border: 0; cursor: pointer; }
+.nav-group > button:hover, .nav-group.open > button { color: var(--text); background: var(--surface-2); }
+.nav-group > button.active { color: var(--text); background: var(--surface-2); }
+.caret { font-size: 10px; opacity: .6; margin-left: 2px; }
+.nav-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; min-width: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 6px; z-index: 40; }
+.nav-group.open .nav-menu, .nav-group:focus-within .nav-menu { display: block; }
+.nav-menu a, .menu-panel a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--text); }
+.nav-menu a:hover, .menu-panel a:hover { background: var(--surface-2); text-decoration: none; }
+.nav-menu a.active, .menu-panel a.active { background: var(--accent-soft); }
+.nm-label { display: block; font-weight: 600; font-size: 14.5px; }
+.nm-hint { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.nav-mobile { display: none; position: relative; flex: 1; }
+.menu-btn { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font: 600 15px Inter, sans-serif; cursor: pointer; }
+.menu-panel { position: fixed; left: 0; right: 0; top: 56px; bottom: 0; overflow-y: auto; background: var(--bg); border-top: 1px solid var(--border); padding: 8px 16px 32px; z-index: 50; }
+.mp-section { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.mp-head { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 6px 10px 2px; }
+.mp-head.active { color: var(--accent); }
+a.mp-solo { font-weight: 600; font-size: 16px; }
+.subnav { border-bottom: 1px solid var(--border); background: var(--bg); }
+.subnav-inner { max-width: 1160px; margin: 0 auto; padding: 6px 16px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.subnav-inner::-webkit-scrollbar { display: none; }
+.subnav-inner a { padding: 6px 12px; border-radius: 999px; color: var(--muted); font-weight: 500; font-size: 14.5px; white-space: nowrap; }
+.subnav-inner a:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.subnav-inner a.active { color: var(--accent-ink, #fff); background: var(--accent); }
+@media (max-width: 940px) {
+  .nav-desktop { display: none; }
+  .nav-mobile { display: block; }
+  .topbar-inner { gap: 10px; }
+}
+@media (max-width: 720px) { .subnav-inner { mask-image: linear-gradient(to right, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, #000 88%, transparent); padding-right: 28px; } }
